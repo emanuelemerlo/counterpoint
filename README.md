@@ -11,6 +11,9 @@ del pianoforte).
    (oppure scarica lo zip dalla pagina delle release ed estrailo lì).
 2. In MuseScore: **Plugin → Gestisci plugin**, attiva *Contrappunto automatico*.
 3. Il plugin compare nel menu **Plugin → Composizione/arrangiamento**.
+4. Dopo un aggiornamento **riavvia MuseScore**: finché resta aperto usa la
+   versione caricata all'avvio. La versione in uso è indicata accanto al
+   titolo della finestra del plugin.
 
 La cartella deve contenere entrambi i file: `contrappunto.qml` (interfaccia e
 collegamento con lo spartito) e `contrappunto_engine.js` (motore musicale).

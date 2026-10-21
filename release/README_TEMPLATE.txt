@@ -56,7 +56,10 @@ voce di un rigo esistente.
       macOS   : ~/Documents/MuseScore4/Plugins/
       Linux   : ~/Documents/MuseScore4/Plugins/
     (la cartella è indicata anche in Preferenze > Cartelle > Plugin).
-    Se aggiorni da una versione precedente, sostituisci la vecchia cartella.
+    Se aggiorni da una versione precedente, sostituisci la vecchia cartella
+    e RIAVVIA MuseScore: finché resta aperto continua a usare la versione
+    caricata all'avvio. Il numero di versione in uso compare accanto al
+    titolo della finestra del plugin.
  3. In MuseScore: menu Plugin > Gestisci plugin, attiva
     "Contrappunto automatico".
  4. Il plugin compare nel menu Plugin > Composizione/arrangiamento.

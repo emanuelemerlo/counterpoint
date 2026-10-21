@@ -14,7 +14,7 @@ MuseScore {
     id: plugin
     title: "Contrappunto automatico"
     description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità."
-    version: "2.2.0"
+    version: "2.2.1"
     categoryCode: "composing-arranging-tools"
     pluginType: "dialog"
     requiresScore: true
@@ -478,6 +478,9 @@ MuseScore {
 
     // usato dal collaudo
     function setVariants(n, separate) { variantsSpin.value = n; separateCheck.checked = separate; }
+    function setInstrument(id) {
+        for (var k = 0; k < instruments.length; k++) if (instruments[k].id === id) instrumentCombo.currentIndex = k;
+    }
 
     function seedFor(seed0, i) { return ((seed0 - 1 + i) % 99999) + 1; }
 
@@ -670,6 +673,7 @@ MuseScore {
                 Layout.fillWidth: true
                 spacing: 12
                 Label { text: "Contrappunto automatico"; font.bold: true; font.pixelSize: 17; color: plugin.cText }
+                Label { text: "v" + plugin.version; color: plugin.cTextDim }
                 Label {
                     text: plugin.rangeLabel; color: plugin.cTextDim
                     elide: Text.ElideRight; Layout.fillWidth: true

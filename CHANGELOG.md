@@ -4,6 +4,14 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.2.1
+
+### Miglioramenti
+- Il numero di versione è visibile nell'intestazione della finestra, per
+  controllare quale versione sta usando MuseScore.
+- Istruzioni: dopo aver aggiornato il plugin va riavviato MuseScore, che
+  altrimenti continua a usare la versione caricata all'avvio.
+
 ## 2.2.0
 
 ### Novità
