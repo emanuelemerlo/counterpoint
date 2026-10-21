@@ -34,6 +34,8 @@ voce di un rigo esistente.
  * Estensione dello strumento: le note restano sempre dentro l'estensione
    dello strumento di destinazione; se serve la voce cambia posizione
    (sopra/sotto la melodia) o ottava, ricalcolando la linea.
+ * Note alterate: il contrappunto segue gli accordi fuori tonalità e le
+   alterazioni della melodia e del basso (niente false relazioni).
  * Riconoscimento automatico di tonalità, modo (maggiore/minore) e metro
    (semplice/composto), anche con cambi di armatura.
  * Imitazione: nelle pause della melodia il contrappunto riprende il suo

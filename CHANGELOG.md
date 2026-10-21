@@ -4,6 +4,24 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.5.0
+
+### Correzioni
+- Il contrappunto tiene conto delle note alterate della melodia e del basso.
+  Prima l'analisi armonica conosceva solo gli accordi della tonalità e il
+  contrappunto poteva usare solo note della scala: in un passaggio in Sol minore
+  dentro un brano in La minore (Sol–Sib–Re) il flauto teneva un Mi, a un tritono
+  dal Sib e a una seconda dal Re. Ora:
+  - l'analisi riconosce anche gli accordi fuori tonalità (prestiti, dominanti
+    secondarie, napoletana) quando le note che suonano li indicano;
+  - le note alterate sentite nell'ultima battuta, in qualunque voce, diventano
+    disponibili per il contrappunto (con la stessa grafia) e la stessa nota
+    naturale è sconsigliata, come un'alterazione che vale per la battuta;
+  - il tritono tra voci superiori conta come dissonanza, salvo quando le due
+    note appartengono all'accordo (settima di dominante, accordo diminuito).
+- Sul brano di prova con il flauto le dissonanze sul tempo sopra note alterate
+  scendono da 52 a 13 (in 5 semi), senza false relazioni e senza parallele.
+
 ## 2.4.0
 
 ### Correzioni

@@ -139,6 +139,21 @@ function buildChords(k) {
         out.push(mkChord(d, r, th, f, null, prior[d]));
         if (d === 4) out.push(mkChord(d, r, th, f, tp(d + 6, harm), prior[d] - 0.05));
     }
+    // accordi fuori tonalità: vincono solo se le note che suonano li indicano chiaramente
+    // (es. Sol minore in La minore: Sol–Sib–Re). Grafia per terze sopra la fondamentale.
+    var have = {};
+    out.forEach(function (c) { have[c.root + ":" + c.third + ":" + c.fifth] = 1; });
+    for (var rt = k.tonicTpc - 7; rt <= k.tonicTpc + 7; rt++) {
+        [[4, 1], [-3, 1], [-3, -6]].forEach(function (q) {          // maggiore, minore, diminuito (in quinte)
+            var t3 = rt + q[0], t5 = rt + q[1];
+            var id = tpcToPc(rt) + ":" + tpcToPc(t3) + ":" + tpcToPc(t5);
+            if (have[id]) return;
+            have[id] = 1;
+            var ch = mkChord(-1, rt, t3, t5, null, -0.2);
+            ch.chromatic = true;
+            out.push(ch);
+        });
+    }
     return out;
 }
 function mkChord(deg, r, t, f, s, prior) {
@@ -425,8 +440,8 @@ function chooseRange(C) {
     C.candCache = {};
 }
 
-function candsFor(C, key) {
-    var id = key.sharps + key.mode;
+function candsFor(C, key, extra) {
+    var id = key.sharps + key.mode + (extra && extra.length ? "|" + extra.join(",") : "");
     if (C.candCache[id]) return C.candCache[id];
     var out = [];
     for (var i = 0; i < key.scale.length; i++) {
@@ -436,6 +451,17 @@ function candsFor(C, key) {
             out.push({ midi: midi, tpc: sc.tpc, pc: pc, letter: letter, dia: diaOf(midi, letter), deg: sc.deg,
                        raised: sc.raised, natural: sc.natural,
                        isLT: key.minor ? (sc.raised && sc.deg === 6) : sc.deg === 6 });
+        }
+    }
+    // note alterate presenti nelle altre voci (con la loro grafia): il contrappunto può usarle
+    var tl = tpcToLetter(key.tonicTpc);
+    for (var e = 0; extra && e < extra.length; e++) {
+        var xt = extra[e], xpc = tpcToPc(xt), xl = tpcToLetter(xt);
+        if (out.some(function (o) { return o.pc === xpc; })) continue;
+        for (var mx = C.candLo; mx <= C.candHi; mx++) {
+            if (mod(mx, 12) !== xpc) continue;
+            out.push({ midi: mx, tpc: xt, pc: xpc, letter: xl, dia: diaOf(mx, xl), deg: mod(xl - tl, 7),
+                       raised: false, natural: false, isLT: false, chromatic: true });
         }
     }
     out.sort(function (a, b) { return a.midi - b.midi; });
@@ -728,6 +754,7 @@ function annotate(C, events) {
         });
         ev.rest = !ev.mel && !ev.bass && !ev.inner.some(function (x) { return x.mel || x.bass; });
         ev.role = C.role; ev.lo = C.lo; ev.hi = C.hi;
+        ev.chromatic = chromaticAt(C, ev);
         ev.crowded = crowdedFor(ev, ev.role, ev.lo, ev.hi);
         ev.isFinal = (i === events.length - 1);
         ev.isCad = false;
@@ -746,6 +773,25 @@ function annotate(C, events) {
         if (!events[i].rest) { events[i].isFinal = true; break; }
         events[i].isFinal = false;
     }
+}
+
+// Grafie (tpc) delle note fuori scala che suonano in questo evento o si sono
+// sentite nell'ultima battuta, in qualunque voce: come un'alterazione che vale
+// per la battuta, rendono disponibile la nota alterata e sconsigliano la stessa
+// nota naturale (falsa relazione: Mi contro Mib, Si contro Sib).
+function chromaticAt(C, ev) {
+    var inScale = {}, out = [], k = ev.key, i, j;
+    for (i = 0; i < k.scale.length; i++) inScale[tpcToPc(k.scale[i].tpc)] = 1;
+    var t0 = ev.tick - ev.m.len, t1 = ev.tick + ev.dur;
+    [C.melLine, C.bassLine].forEach(function (line) {
+        for (j = Math.max(0, bsearch(line, t0)); j < line.length && line[j].t < t1; j++) {
+            if (line[j].end <= t0) continue;
+            var all = line[j].all;
+            for (i = 0; i < all.length; i++)
+                if (!inScale[all[i].pc] && out.indexOf(all[i].tpc) < 0) out.push(all[i].tpc);
+        }
+    });
+    return out.sort(function (a, b) { return a - b; });
 }
 
 // spazio reale disponibile per il contrappunto in questo istante, con un dato ruolo e registro
@@ -876,7 +922,9 @@ function staticScore(C, ev, c) {
         var cm = mod(im, 12);
         var melCT = ch ? !!ch.set[mel.pc] : true;
         var dissTable = (role === "below") ? DISS_LOW : DISS_UP;
-        if (dissTable[cm]) { if (melCT) r.dissM = true; else s -= 8; }
+        // tritono tra voci superiori: dissonante, salvo che entrambe le note siano dell'accordo (V7, diminuito)
+        var triOK = cm === 6 && ch && ch.set[c.pc] && ch.set[mel.pc];
+        if (dissTable[cm] || (cm === 6 && !triOK)) { if (melCT) r.dissM = true; else s -= 8; }
         else if (cm === 3 || cm === 4 || cm === 8 || cm === 9) s += (role === "middle" ? 3 : 6);
         if (im > 12) s -= (im - 12) * 2;
         if (role === "above" && im >= 0 && im < 3) s -= 4;
@@ -896,6 +944,11 @@ function staticScore(C, ev, c) {
             if (ch.seventh !== null && c.pc === ch.seventh) r.sev = true;
         } else s -= 5;
     }
+    if (c.chromatic) s += r.ct ? 2 : -12;                     // nota alterata: solo se è dell'accordo
+    for (x = 0; x < (ev.chromatic || []).length; x++) {       // alterazione sentita da poco: niente nota naturale
+        var at = ev.chromatic[x];
+        if (tpcToLetter(at) === c.letter && tpcToPc(at) !== c.pc) s -= (ev.strength >= 2 ? 40 : 25);
+    }
     // dissonanze che appartengono all'accordo (settima di dominante, tritono)
     if (r.ct && C.opt.strictness === "free") {
         if (r.dissB && (cb === 6 || r.sev)) { r.dissB = false; r.sev = true; }
@@ -909,6 +962,7 @@ function staticScore(C, ev, c) {
         var ov = Math.abs(c.midi - ev.others[x].midi), ovc = ov % 12;
         if (ov === 0) s -= 28;
         else if (ovc === 1 || ovc === 2 || ovc === 11) s -= (ov < 12 ? 18 : 8);
+        else if (ovc === 6 && !(ch && ch.set[c.pc] && ch.set[ev.others[x].pc])) s -= (ev.strength >= 2 ? 16 : 6);
         if (ev.others[x].letter === c.letter && ev.others[x].pc !== c.pc) s -= 60;
         if (c.isLT && ev.others[x].pc === c.pc) s -= 20;
     }
@@ -1173,7 +1227,7 @@ function search(C, events) {
         if (ev.rest) {
             for (n = 0; n < beam.length; n++) { var rn = restNode(beam[n]); rn.t = ev.tick; children.push(rn); }
         } else {
-            var cands = candsFor(C, ev.key);
+            var cands = candsFor(C, ev.key, ev.chromatic);
             var stat = [];
             for (j = 0; j < cands.length; j++) stat.push(staticScore(C, ev, cands[j]));
             for (var pass = 0; pass < 2 && !children.length; pass++) {

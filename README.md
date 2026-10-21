@@ -72,6 +72,9 @@ evitare di chiudersi in un vicolo cieco. Il motore nuovo:
 - **Armonia**: stima l'accordo di ogni tempo da tutte le note che suonano (anche
   le voci interne dell'accompagnamento), con preferenza per la fondamentale al
   basso; premia le note che completano l'accordo (soprattutto la terza mancante).
+  Riconosce anche gli accordi fuori tonalità; le note alterate sentite
+  nell'ultima battuta diventano disponibili per il contrappunto e la stessa nota
+  naturale è sconsigliata (niente false relazioni).
 - **Regole verticali**: niente quinte e ottave parallele o per moto contrario (scartate,
   verificate a fine calcolo); dirette penalizzate soprattutto tra voci esterne;
   niente incroci; evita unisoni e seconde con le voci interne; sensibile non
