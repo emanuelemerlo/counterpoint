@@ -12,5 +12,6 @@ Item {
     property var cmdLog: []
     signal run()
     function quit() { console.log("[mock] quit()"); }
+    function newElement(t) { return { type: t, text: "" }; }
     function cmd(name) { cmdLog.push(name); if (curScore && curScore._cmd) curScore._cmd(name); }
 }

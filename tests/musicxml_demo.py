@@ -2,11 +2,13 @@
 """
 Prova il motore su uno spartito reale, senza MuseScore.
 
-  python3 tests/musicxml_demo.py input.mxl output.mxl [specie,...] [--seed N]
+  python3 tests/musicxml_demo.py input.mxl output.mxl [specie,...] [--seed N] [--variants N]
 
 Legge il MusicXML come farebbe il plugin (melodia = rigo 1, basso = rigo 2 della
 prima parte, oppure prima e seconda parte), chiama il motore JS con node e
 scrive uno spartito con una parte di contrappunto in più per ogni specie.
+Con --variants N calcola N varianti per specie (semi consecutivi) e le scrive
+in ordine di qualità, come il plugin con «Una variante per rigo».
 Specie: free, 1:1, 2:1, 4:1, sus, florid.
 """
 import json, os, subprocess, sys, zipfile, io, copy
@@ -145,10 +147,19 @@ def add_part(root, part_id, name, items, measures, keys, clef):
                 if it["tieNext"]: ET.SubElement(nt, "tied", type="start")
 
 
+def opt_arg(name, default):
+    if name in sys.argv:
+        return int(sys.argv[sys.argv.index(name) + 1])
+    return default
+
+
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    seed = 7
-    if "--seed" in sys.argv: seed = int(sys.argv[sys.argv.index("--seed") + 1]); args = [a for a in args if a != str(seed)]
+    seed, nvar = opt_arg("--seed", 7), opt_arg("--variants", 1)
+    args, skip = [], False
+    for a in sys.argv[1:]:
+        if skip: skip = False; continue
+        if a in ("--seed", "--variants"): skip = True; continue
+        args.append(a)
     src, dst = args[0], args[1]
     species = (args[2] if len(args) > 2 else "free,florid,2:1").split(",")
     tree = load_xml(src)
@@ -158,24 +169,33 @@ def main():
     bass_key = keys_sorted[1] if len(keys_sorted) > 1 else None
     end = measures[-1]["tick"] + measures[-1]["len"]
     root = tree.getroot()
-    for i, sp in enumerate(species):
-        inp = {"melody": staves[mel_key], "bass": staves[bass_key] if bass_key else [],
-               "measures": [{k: m[k] for k in ("tick", "len", "num", "den", "isFirst")} for m in measures],
-               "keys": keys, "start": 0, "end": end,
-               "options": {"species": sp, "seed": seed, "sameStaff": False}}
-        out = subprocess.run(["node", os.path.join(HERE, "run_on_json.js")], input=json.dumps(inp),
-                             capture_output=True, text=True, check=True)
-        res = json.loads(out.stdout)
-        items, rep = res["items"], res["report"]
-        for a, b in zip(items, items[1:]):
-            if a["tieNext"]: b["tieBack"] = True
-        lo, hi = rep["range"]
-        clef = ("G", "2") if (lo + hi) / 2 >= 60 else (("G", "2", "8") if (lo + hi) / 2 >= 52 else ("F", "4"))
-        add_part(root, "PCP%d" % (i + 1), "Contrappunto (%s)" % LABEL.get(sp, sp), items, measures, keys, clef)
-        print("%-7s tonalità %s, ruolo %s, %d note, passi/salti %d/%d, contrario/simile %d/%d, parallele %d, culmini %d, %d ms"
-              % (sp, rep["key"], rep["role"], rep["notes"], rep["steps"], rep["leaps"], rep["contrary"], rep["similar"],
-                 rep["parallels"], rep["climaxCount"], rep["ms"]))
-        for d in rep["details"]: print("   !", d)
+    npart = 0
+    for sp in species:
+        results = []
+        for v in range(nvar):
+            inp = {"melody": staves[mel_key], "bass": staves[bass_key] if bass_key else [],
+                   "measures": [{k: m[k] for k in ("tick", "len", "num", "den", "isFirst")} for m in measures],
+                   "keys": keys, "start": 0, "end": end,
+                   "options": {"species": sp, "seed": seed + v, "sameStaff": False}}
+            out = subprocess.run(["node", os.path.join(HERE, "run_on_json.js")], input=json.dumps(inp),
+                                 capture_output=True, text=True, check=True)
+            res = json.loads(out.stdout)
+            if not any(r["report"]["signature"] == res["report"]["signature"] for _, r in results):
+                results.append((seed + v, res))
+        results.sort(key=lambda x: (x[1]["report"]["parallels"], -x[1]["report"]["quality"], x[0]))
+        for rank, (sd, res) in enumerate(results, 1):
+            items, rep = res["items"], res["report"]
+            for a, b in zip(items, items[1:]):
+                if a["tieNext"]: b["tieBack"] = True
+            lo, hi = rep["range"]
+            clef = ("G", "2") if (lo + hi) / 2 >= 60 else (("G", "2", "8") if (lo + hi) / 2 >= 52 else ("F", "4"))
+            npart += 1
+            name = "Contrappunto (%s)" % LABEL.get(sp, sp) + ((" %d – seme %d" % (rank, sd)) if nvar > 1 else "")
+            add_part(root, "PCP%d" % npart, name, items, measures, keys, clef)
+            print("%-7s seme %-5d qualità %6.2f  tonalità %s, ruolo %s, %d note, passi/salti %d/%d, contrario/simile %d/%d, parallele %d, culmini %d, %d ms"
+                  % (sp, sd, rep["quality"], rep["key"], rep["role"], rep["notes"], rep["steps"], rep["leaps"], rep["contrary"],
+                     rep["similar"], rep["parallels"], rep["climaxCount"], rep["ms"]))
+            for d in rep["details"]: print("   !", d)
     data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("META-INF/container.xml", '<?xml version="1.0" encoding="UTF-8"?><container><rootfiles>'
