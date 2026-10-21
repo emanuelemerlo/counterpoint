@@ -108,5 +108,6 @@ function makeCursor(S) {
         put(el(c._tick, c._dur, CHORD, [{ pitch: p, tpc: tpc, tpc1: tpc, tpc2: tpc, tieBack: null, tieFor: null }]));
     };
     c.addRest = function () { put(el(c._tick, c._dur, REST, [])); };
+    c.add = function (e) { S.log.push("add(" + (e.text || e.type) + " @" + c._tick + " rigo " + c.staffIdx + ")"); };
     return c;
 }

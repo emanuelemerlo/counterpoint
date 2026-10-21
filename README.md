@@ -29,6 +29,16 @@ collegamento con lo spartito) e `contrappunto_engine.js` (motore musicale).
 5. Dopo la prima generazione in un nuovo rigo, quel rigo diventa la destinazione:
    cambia il **seme** e premi di nuovo Genera per ottenere varianti al posto della
    precedente.
+6. Per confrontare più soluzioni imposta **Quante** (fino a 8): il plugin calcola
+   le varianti con semi consecutivi e le ordina per qualità (prima quelle senza
+   parallele, poi il punteggio delle regole). La migliore viene scritta nella
+   destinazione; clic su un'altra variante dell'elenco per sostituirla (ogni
+   sostituzione è annullabile con Ctrl+Z e il suo seme passa nel campo Seme).
+   Con **Una variante per rigo nuovo** ogni variante finisce in un rigo a sé,
+   con un'etichetta, per ascoltarle a confronto.
+
+La finestra usa i colori del tema di MuseScore (chiaro, scuro, alto contrasto) e,
+se non sono disponibili, quelli del sistema.
 
 ### Opzioni
 
@@ -41,6 +51,7 @@ collegamento con lo spartito) e `contrappunto_engine.js` (motore musicale).
 | Modo / Metro | Automatici, oppure forzati (maggiore/minore, semplice/composto) |
 | Imitazione | Nelle pause della melodia il contrappunto riprende il suo ultimo motivo |
 | Varietà e seme | Quanto il risultato può discostarsi dalla soluzione "più corretta"; stesso seme = stesso risultato |
+| Quante / una per rigo | Numero di varianti da calcolare e ordinare; facoltativamente una per rigo nuovo |
 
 ## Come funziona il motore
 
@@ -74,6 +85,9 @@ evitare di chiudersi in un vicolo cieco. Il motore nuovo:
   note seguite da pause) e richiede lì note dell'accordo raggiunte per grado; il
   finale cade su una nota dell'accordo di tonica (sulla tonica se il contrappunto
   fa da basso).
+- **Qualità di una variante**: il punteggio finale della ricerca diviso per il
+  numero di eventi, *senza* il rumore introdotto dalla Varietà; è quindi
+  confrontabile tra semi diversi.
 - **Moto**: premia il moto contrario rispetto a melodia e basso, penalizza i tre
   moti simili contemporanei e le lunghe catene di terze/seste parallele.
 
@@ -82,6 +96,7 @@ evitare di chiudersi in un vicolo cieco. Il motore nuovo:
 ```bash
 node tests/run_tests.js [seme]                    # casi sintetici, verifica assenza di parallele
 python3 tests/musicxml_demo.py in.mxl out.mxl free,florid,2:1,sus,1:1
+python3 tests/musicxml_demo.py in.mxl out.mxl free --seed 6304 --variants 5   # 5 varianti in ordine di qualità
 python3 tests/mock/run_mock.py                    # esegue il plugin QML con un finto MuseScore (richiede PySide6)
 ```
 
@@ -103,3 +118,20 @@ aprire e ascoltare in MuseScore.
 - Nei passaggi in cui melodia e accompagnamento sono molto vicini (per esempio
   un arpeggio condiviso tra le mani) il contrappunto può fare brevi pause per
   evitare quinte od ottave parallele.
+
+## Release
+
+Il workflow `.github/workflows/release.yml` collauda il motore e il plugin QML
+(con un finto MuseScore) a ogni push e pull request, e prepara il pacchetto tra
+gli *artifacts* dell'esecuzione. Per pubblicare una versione:
+
+1. aggiorna `version:` in `plugin/Contrappunto/contrappunto.qml`;
+2. aggiungi in `CHANGELOG.md` la sezione `## X.Y.Z` con le note di rilascio;
+3. crea e invia il tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+   (oppure *Actions → Release → Run workflow* indicando la versione).
+
+La release contiene `Contrappunto-X.Y.Z.zip` (cartella `Contrappunto/` con i
+due file del plugin e `README.TXT`) e `README.TXT` a parte, con note di
+rilascio, funzionalità, installazione e istruzioni d'uso. Il testo fisso del
+README.TXT è in `release/README_TEMPLATE.txt`; per provarlo in locale:
+`python3 tools/build_release.py` (scrive in `dist/`).

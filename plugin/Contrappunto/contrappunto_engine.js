@@ -309,6 +309,8 @@ function generate(input) {
     report.range = [C.lo, C.hi];
     report.events = events.length;
     report.notes = items.filter(function (x) { return x.midi !== null; }).length;
+    report.quality = Math.round(C.quality * 100) / 100;
+    report.signature = items.map(function (x) { return x.tick + ":" + x.ticks + ":" + x.midi; }).join(",");
     return { items: items, report: report, events: events, path: path };
 }
 
@@ -930,7 +932,8 @@ function evalTransition(C, ev, node, c, st, relax) {
         if (b1 === c.midi) s -= (b2 === c.midi ? 9 : 3);
     }
 
-    s += C.opt.variety * (C.rng() - 0.5) * 6;
+    var nz = C.opt.variety * (C.rng() - 0.5) * 6;   // varietà: rumore controllato, escluso dalla qualità
+    s += nz;
 
     var pm = 0;
     if (p && !hold && ev.mel && ev.melPrev) {
@@ -938,7 +941,7 @@ function evalTransition(C, ev, node, c, st, relax) {
         if (dM !== 0 && dM === sign(mv) && Math.abs(ev.melPrev.midi - p.midi) % 12 === Math.abs(ev.mel.midi - c.midi) % 12) pm = node.pm + 1;
     }
     return {
-        c: c, prev: node, score: node.score + s,
+        c: c, prev: node, score: node.score + s, noise: node.noise + nz,
         lastD: hold ? node.lastD : d, run: hold ? node.run : run,
         hold: hold ? node.hold + 1 : 0,
         maxM: newMax, maxCnt: newCnt, maxIdx: newMaxIdx, minM: Math.min(node.minM, c.midi), span: 1,
@@ -957,7 +960,7 @@ function pitchAt(node, t) {           // altezza del contrappunto al tick t, ris
 }
 
 function restNode(node) {
-    return { c: null, prev: node, score: node.score - (node.pend ? 100 : 0), lastD: 0, run: 0, hold: 0,
+    return { c: null, prev: node, score: node.score - (node.pend ? 100 : 0), noise: node.noise, lastD: 0, run: 0, hold: 0,
              maxM: node.maxM, maxCnt: node.maxCnt, maxIdx: node.maxIdx, minM: node.minM, span: node.span,
              pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false };
 }
@@ -977,7 +980,7 @@ function optionalRest(C, ev, node) {
 
 function search(C, events) {
     var B = C.opt.beam || 48;
-    var root = { c: null, prev: null, score: 0, lastD: 0, run: 0, hold: 0, maxM: -1, maxCnt: 0, maxIdx: -1,
+    var root = { c: null, prev: null, score: 0, noise: 0, lastD: 0, run: 0, hold: 0, maxM: -1, maxCnt: 0, maxIdx: -1,
                  minM: 999, pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false };
     var beam = [root], i, j, n;
     for (i = 0; i < events.length; i++) {
@@ -1022,6 +1025,9 @@ function search(C, events) {
         }
         if (sc > bestScore) { bestScore = sc; bestNode = nd; }
     }
+    // qualità secondo le regole (senza il rumore della varietà), media per evento:
+    // serve a confrontare varianti ottenute con semi diversi
+    C.quality = total ? (bestScore - bestNode.noise) / total : 0;
     var path = new Array(total);
     for (i = total - 1; i >= 0; i--) { path[i] = bestNode.c; bestNode = bestNode.prev; }
     return path;

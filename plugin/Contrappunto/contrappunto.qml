@@ -13,20 +13,28 @@ import "contrappunto_engine.js" as Engine
 MuseScore {
     id: plugin
     title: "Contrappunto automatico"
-    description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo."
-    version: "2.0.0"
+    description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità."
+    version: "2.1.0"
     categoryCode: "composing-arranging-tools"
     pluginType: "dialog"
     requiresScore: true
-    width: 500
-    height: 720
+    width: 860
+    height: 640
 
     // ------------------------------------------------------------------ stato
     property var staffNames: []
     property int rangeStart: 0
     property int rangeEnd: 0
     property string rangeLabel: ""
-    property var lastTarget: null      // { staff, voice } dell'ultimo risultato scritto in un nuovo rigo
+
+    // varianti
+    property bool busy: false
+    property var job: null              // calcolo in corso (vedi generate())
+    property var candidates: []         // [{ seed, res, staff, voice }] ordinate per qualità
+    property int chosen: -1             // variante scritta nella destinazione
+    property var target: null           // { staff, voice } dove si scrive la variante scelta
+    property bool separateStaves: false // ultima generazione: una variante per rigo
+    signal generationFinished()
 
     readonly property var speciesValues: ["free", "1:1", "2:1", "4:1", "sus", "florid"]
     readonly property var speciesLabels: ["Libero (ritmo complementare)", "1:1 – nota contro nota", "2:1 – due note contro una",
@@ -44,8 +52,55 @@ MuseScore {
         { label: "Pianoforte", id: "piano" }
     ]
 
+    // ------------------------------------------------------------------ tema
+    // Colori presi dal tema di MuseScore (ui.theme, chiaro/scuro/alto contrasto);
+    // se non disponibile, dalla tavolozza di sistema. Nessun colore fisso.
+    property bool dark: false
+    property color cBg: sysPal.window
+    property color cPanel: sysPal.window
+    property color cText: sysPal.windowText
+    property color cTextDim: sysPal.windowText
+    property color cField: sysPal.base
+    property color cButton: sysPal.button
+    property color cAccent: sysPal.highlight
+    property color cBorder: sysPal.mid
+    property color cError: "#b00020"
+    property color cGood: "#1e7d45"
+
+    SystemPalette { id: sysPal; colorGroup: SystemPalette.Active }
+
+    function luma(c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b; }
+    function mix(a, b, t) { return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1); }
+
+    function applyTheme() {
+        var t = null;
+        try { if (typeof ui !== "undefined" && ui && ui.theme && ui.theme.backgroundPrimaryColor !== undefined) t = ui.theme; } catch (e) {}
+        if (t) {
+            cBg = t.backgroundPrimaryColor;
+            cPanel = t.backgroundSecondaryColor !== undefined ? t.backgroundSecondaryColor : t.backgroundPrimaryColor;
+            cText = t.fontPrimaryColor;
+            cButton = t.buttonColor !== undefined ? t.buttonColor : sysPal.button;
+            cField = t.textFieldColor !== undefined ? t.textFieldColor : cButton;
+            cAccent = t.accentColor !== undefined ? t.accentColor : sysPal.highlight;
+            cBorder = t.strokeColor !== undefined ? t.strokeColor : mix(cBg, cText, 0.35);
+        } else {
+            cBg = sysPal.window; cPanel = sysPal.window; cText = sysPal.windowText;
+            cButton = sysPal.button; cField = sysPal.base; cAccent = sysPal.highlight;
+            cBorder = mix(cBg, cText, 0.35);
+        }
+        dark = luma(cBg) < 0.5;
+        // garanzia di leggibilità: se il testo non contrasta con lo sfondo lo forzo
+        if (Math.abs(luma(cText) - luma(cBg)) < 0.4) cText = dark ? "#f0f0f0" : "#1b1b1b";
+        cTextDim = mix(cBg, cText, 0.72);
+        cError = dark ? "#ff8a80" : "#b00020";
+        cGood = dark ? "#7fd6a0" : "#1e7d45";
+    }
+
+    Component.onCompleted: applyTheme()
+
     onRun: {
         if (!curScore) { quit(); return; }
+        applyTheme();
         refreshStaves();
         captureRange();
         var sel = curScore.selection;
@@ -58,7 +113,9 @@ MuseScore {
         bassCombo.currentIndex = (bas === mel) ? 0 : bas + 1;   // 0 = "nessuno"
         targetStaffCombo.currentIndex = mel;
         seedSpin.value = Math.floor(Math.random() * 9000) + 1;
-        setStatus("Pronto. " + rangeLabel, false);
+        candidates = [];
+        chosen = -1;
+        setStatus("Pronto. Imposta le opzioni e premi Genera.", "info");
     }
 
     // ------------------------------------------------------------------ utilità score
@@ -249,14 +306,44 @@ MuseScore {
         }
         return false;
     }
-
-    function setStatus(msg, isError) {
+    property color statusColor: cText
+    function setStatus(msg, kind) {
         statusText.text = msg;
-        statusText.color = isError ? "#b00020" : "#1b1b1b";
+        statusColor = Qt.binding(function () {
+            return kind === "error" ? plugin.cError : (kind === "good" ? plugin.cGood : plugin.cText);
+        });
+    }
+
+    // ------------------------------------------------------------------ varianti: descrizioni
+    function pct(a, b) { return (a + b) ? Math.round(100 * a / (a + b)) + "%" : "–"; }
+    function candTitle(i) {
+        var c = candidates[i];
+        if (!c) return "";
+        return (i + 1) + ".  Seme " + c.seed + "   ·   punteggio " + c.res.report.quality.toFixed(2) +
+               (i === 0 && candidates.length > 1 ? "   ★ migliore" : "") +
+               (c.staff !== undefined && separateStaves ? "   →  rigo " + (c.staff + 1) : "");
+    }
+    function candStats(i) {
+        var c = candidates[i];
+        if (!c) return "";
+        var r = c.res.report;
+        return "congiunti " + pct(r.steps, r.leaps) + "  ·  moto contrario " + pct(r.contrary, r.similar) +
+               "  ·  culmini " + r.climaxCount + "  ·  " + (r.parallels ? (r.parallels + " parallele!") : "nessuna parallela");
+    }
+    function describe(c, staff, voice) {
+        var r = c.res.report;
+        var roleName = { above: "sopra la melodia", middle: "voce intermedia", below: "sotto la melodia (basso)" }[r.role];
+        return "Seme " + c.seed + ": " + r.notes + " note nel rigo " + (staff + 1) + ", voce " + (voice + 1) + ".\n" +
+               "Tonalità " + r.key + ", " + roleName + ". Gradi congiunti " + r.steps + ", salti " + r.leaps +
+               ", moto contrario " + r.contrary + ", simile " + r.similar + ".\n" +
+               (r.parallels ? ("Attenzione: " + r.details.join("; ")) : "Nessuna quinta o ottava parallela.") +
+               (r.climaxCount === 1 ? " Un solo culmine." : "");
     }
 
     // ------------------------------------------------------------------ azione principale
+    // Il calcolo procede una variante alla volta (Timer) per non bloccare la finestra.
     function generate() {
+        if (busy) return;
         var melStaff = melodyCombo.currentIndex;
         var bassStaff = bassCombo.currentIndex - 1;           // -1 = nessun basso
         var toNew = newStaffRadio.checked;
@@ -264,7 +351,7 @@ MuseScore {
         var tVoice = voiceCombo.currentIndex;
 
         if (!toNew && (tStaff === melStaff || tStaff === bassStaff) && tVoice === 0 && staffHasNotes(tStaff, 0)) {
-            setStatus("La voce 1 del rigo scelto contiene la melodia o il basso: scegli la voce 2, 3 o 4, oppure un altro rigo.", true);
+            setStatus("La voce 1 del rigo scelto contiene la melodia o il basso: scegli la voce 2, 3 o 4, oppure un altro rigo.", "error");
             return;
         }
 
@@ -278,189 +365,452 @@ MuseScore {
             if (m.tick + m.len <= rangeStart || m.tick >= rangeEnd) continue;
             ms.push({ tick: m.tick, len: m.len, num: m.num, den: m.den, isFirst: m.isFirst });
         }
+        var n = variantsSpin.value;
+        job = {
+            input: { melody: melody, bass: bass, measures: ms, keys: keys, start: rangeStart, end: rangeEnd },
+            options: {
+                species: speciesValues[speciesCombo.currentIndex],
+                position: positionValues[positionCombo.currentIndex],
+                register: registerValues[registerCombo.currentIndex],
+                strictness: strictCombo.currentIndex === 0 ? "strict" : "free",
+                mode: ["auto", "major", "minor"][modeCombo.currentIndex],
+                meter: ["auto", "simple", "compound"][meterCombo.currentIndex],
+                imitation: imitationCheck.checked,
+                variety: varietySlider.value,
+                sameStaff: melStaff === bassStaff
+            },
+            n: n, i: 0, seed0: seedSpin.value, results: [],
+            toNew: toNew, tStaff: tStaff, tVoice: tVoice,
+            separate: n > 1 && separateCheck.checked
+        };
+        busy = true;
+        setStatus(n > 1 ? ("Calcolo delle varianti: 0 di " + n + "…") : "Calcolo in corso…", "info");
+        stepTimer.start();
+    }
 
-        var res;
+    Timer { id: stepTimer; interval: 20; repeat: false; onTriggered: plugin.step() }
+
+    // usato dal collaudo
+    function setVariants(n, separate) { variantsSpin.value = n; separateCheck.checked = separate; }
+
+    function seedFor(seed0, i) { return ((seed0 - 1 + i) % 99999) + 1; }
+
+    function step() {
+        var j = job;
+        var inp = {}, k;
+        for (k in j.input) inp[k] = j.input[k];
+        inp.options = {};
+        for (k in j.options) inp.options[k] = j.options[k];
+        var seed = seedFor(j.seed0, j.i);
+        inp.options.seed = seed;
         try {
-            res = Engine.generate({
-                melody: melody, bass: bass, measures: ms, keys: keys, start: rangeStart, end: rangeEnd,
-                options: {
-                    species: speciesValues[speciesCombo.currentIndex],
-                    position: positionValues[positionCombo.currentIndex],
-                    register: registerValues[registerCombo.currentIndex],
-                    strictness: strictCombo.currentIndex === 0 ? "strict" : "free",
-                    mode: ["auto", "major", "minor"][modeCombo.currentIndex],
-                    meter: ["auto", "simple", "compound"][meterCombo.currentIndex],
-                    imitation: imitationCheck.checked,
-                    variety: varietySlider.value,
-                    seed: seedSpin.value,
-                    sameStaff: melStaff === bassStaff
-                }
-            });
+            j.results.push({ seed: seed, res: Engine.generate(inp) });
         } catch (e) {
-            setStatus("Errore nel calcolo: " + e, true);
+            busy = false;
+            setStatus("Errore nel calcolo: " + e, "error");
+            generationFinished();
             return;
         }
+        j.i++;
+        if (j.i < j.n) {
+            setStatus("Calcolo delle varianti: " + j.i + " di " + j.n + "…", "info");
+            stepTimer.start();
+            return;
+        }
+        finishJob();
+    }
 
-        curScore.startCmd();
-        var ties = [];
+    function appendStaff() {
+        var before = curScore.nstaves;
+        curScore.appendPart(instruments[instrumentCombo.currentIndex].id);
+        if (curScore.nstaves === before) curScore.appendPart("piano");
+        if (curScore.nstaves === before) throw "impossibile aggiungere un nuovo rigo";
+        return before;
+    }
+
+    function labelStaff(staff, text) {
         try {
-            if (toNew) {
-                var before = curScore.nstaves;
-                var inst = instruments[instrumentCombo.currentIndex].id;
-                curScore.appendPart(inst);
-                if (curScore.nstaves === before) curScore.appendPart("piano");
-                if (curScore.nstaves === before) throw "impossibile aggiungere un nuovo rigo";
-                tStaff = before;
-                tVoice = 0;
+            var c = curScore.newCursor();
+            c.staffIdx = staff; c.voice = 0;
+            c.rewindToTick(rangeStart);
+            var t = newElement(Element.STAFF_TEXT);
+            t.text = text;
+            c.add(t);
+        } catch (e) { console.log("Contrappunto: etichetta non aggiunta: " + e); }
+    }
+
+    function finishJob() {
+        var j = job;
+        // varianti identiche (succede con Varietà bassa) contano una volta sola
+        var seen = {}, list = [];
+        for (var i = 0; i < j.results.length; i++) {
+            var sig = j.results[i].res.report.signature;
+            if (!seen[sig]) { seen[sig] = true; list.push(j.results[i]); }
+        }
+        // ordine: prima senza parallele, poi punteggio delle regole più alto
+        list.sort(function (a, b) {
+            return (a.res.report.parallels - b.res.report.parallels) ||
+                   (b.res.report.quality - a.res.report.quality) || (a.seed - b.seed);
+        });
+
+        var ties = [], tStaff = j.tStaff, tVoice = j.tVoice;
+        curScore.startCmd();
+        try {
+            if (j.separate) {
+                for (i = 0; i < list.length; i++) {
+                    var st = appendStaff();
+                    ties = ties.concat(writeItems(list[i].res.items, st, 0));
+                    labelStaff(st, "Variante " + (i + 1) + " – seme " + list[i].seed);
+                    list[i].staff = st; list[i].voice = 0;
+                }
+            } else {
+                if (j.toNew) { tStaff = appendStaff(); tVoice = 0; }
+                ties = writeItems(list[0].res.items, tStaff, tVoice);
+                list[0].staff = tStaff; list[0].voice = tVoice;
             }
-            ties = writeItems(res.items, tStaff, tVoice);
             curScore.endCmd();
         } catch (e) {
             curScore.endCmd(true);
-            setStatus("Errore durante la scrittura: " + e, true);
+            busy = false;
+            setStatus("Errore durante la scrittura: " + e, "error");
+            generationFinished();
             return;
         }
         var nTies = addTies(ties);
 
-        if (toNew) {
+        separateStaves = j.separate;
+        candidates = list;
+        chosen = 0;
+        target = j.separate ? null : { staff: tStaff, voice: tVoice };
+        if (j.toNew || j.separate) {
             var keepMel = melodyCombo.currentIndex, keepBass = bassCombo.currentIndex;
             refreshStaves();                       // il cambio di modello azzera le tendine: le ripristino
             melodyCombo.currentIndex = keepMel;
             bassCombo.currentIndex = keepBass;
+        }
+        if (j.toNew && !j.separate) {
             targetStaffCombo.currentIndex = tStaff;
             voiceCombo.currentIndex = 0;
             existingRadio.checked = true;
         }
-        var r = res.report;
-        var roleName = { above: "sopra la melodia", middle: "voce intermedia", below: "sotto la melodia (basso)" }[r.role];
-        var msg = "Fatto: " + r.notes + " note nel rigo " + (tStaff + 1) + ", voce " + (tVoice + 1) + ".\n" +
-                  "Tonalità " + r.key + ", " + roleName + ". Gradi congiunti " + r.steps + ", salti " + r.leaps +
-                  ", moto contrario " + r.contrary + ", simile " + r.similar + ".\n" +
-                  (r.parallels ? ("Attenzione: " + r.details.join("; ")) : "Nessuna quinta o ottava parallela.") +
-                  (r.climaxCount === 1 ? " Un solo culmine." : "") +
-                  (toNew ? "\nIl nuovo rigo è ora la destinazione: cambia il seme e premi di nuovo Genera per una variante." : "") +
-                  ((ties.length && !nTies && tiesCheck.checked) ? "\nNon è stato possibile creare le legature di valore." : "");
-        setStatus(msg, r.parallels > 0);
+
+        var dup = j.n - list.length;
+        var msg;
+        if (j.separate) {
+            msg = list.length + " varianti scritte in " + list.length + " righi nuovi (dal rigo " + (list[0].staff + 1) +
+                  "), in ordine di qualità. Ascoltale e tieni quella che preferisci.";
+        } else {
+            msg = describe(list[0], tStaff, tVoice);
+            if (list.length > 1) msg = "Scritta la migliore di " + list.length + " varianti. Clicca un'altra variante nell'elenco per sostituirla.\n" + msg;
+            else if (j.toNew) msg += "\nIl nuovo rigo è ora la destinazione: cambia il seme e premi di nuovo Genera per una variante.";
+        }
+        if (dup > 0) msg += "\n" + dup + (dup === 1 ? " variante era identica" : " varianti erano identiche") +
+                            " a un'altra: alza la Varietà per risultati più diversi.";
+        if (ties.length && !nTies && tiesCheck.checked) msg += "\nNon è stato possibile creare le legature di valore.";
+        setStatus(msg, list[0].res.report.parallels > 0 ? "error" : "info");
+        busy = false;
+        generationFinished();
+    }
+
+    // Clic su una variante dell'elenco: la scrive al posto di quella attuale
+    function chooseCandidate(i) {
+        if (busy || i < 0 || i >= candidates.length) return;
+        var c = candidates[i];
+        if (separateStaves) {
+            chosen = i;
+            setStatus("Variante " + (i + 1) + " – " + describe(c, c.staff, c.voice), c.res.report.parallels ? "error" : "info");
+            return;
+        }
+        if (i === chosen || !target) return;
+        var ties = [];
+        curScore.startCmd();
+        try {
+            ties = writeItems(c.res.items, target.staff, target.voice);
+            curScore.endCmd();
+        } catch (e) {
+            curScore.endCmd(true);
+            setStatus("Errore durante la scrittura: " + e, "error");
+            return;
+        }
+        addTies(ties);
+        c.staff = target.staff; c.voice = target.voice;
+        chosen = i;
+        seedSpin.value = c.seed;
+        setStatus("Variante " + (i + 1) + " scritta (il suo seme è ora nel campo Seme).\n" + describe(c, target.staff, target.voice),
+                  c.res.report.parallels ? "error" : "info");
     }
 
     // ------------------------------------------------------------------ interfaccia
-    Rectangle {
+    Pane {
+        id: root
         anchors.fill: parent
-        color: "#f3f3f3"
+        padding: 14
+        palette.window: plugin.cBg
+        palette.windowText: plugin.cText
+        palette.base: plugin.cField
+        palette.alternateBase: plugin.cPanel
+        palette.text: plugin.cText
+        palette.button: plugin.cButton
+        palette.buttonText: plugin.cText
+        palette.highlight: plugin.cAccent
+        palette.highlightedText: plugin.dark ? "#ffffff" : "#ffffff"
+        palette.mid: plugin.cBorder
+        palette.dark: plugin.cBorder
+        palette.light: plugin.mix(plugin.cButton, plugin.cBg, 0.5)
+        palette.midlight: plugin.mix(plugin.cButton, plugin.cBg, 0.5)
+        palette.shadow: plugin.dark ? "#000000" : "#808080"
+        palette.placeholderText: plugin.cTextDim
+        palette.toolTipBase: plugin.cPanel
+        palette.toolTipText: plugin.cText
+        background: Rectangle { color: plugin.cBg }
 
-        ScrollView {
-            id: scroll
+        ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 12
-            clip: true
-            contentWidth: availableWidth
+            spacing: 10
 
-            ColumnLayout {
-                width: scroll.availableWidth
-                spacing: 8
-
-                Label { text: "Contrappunto automatico"; font.bold: true; font.pixelSize: 17; color: "#1b1b1b" }
-                Label { text: plugin.rangeLabel; color: "#444"; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            // ---- intestazione
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Label { text: "Contrappunto automatico"; font.bold: true; font.pixelSize: 17; color: plugin.cText }
+                Label {
+                    text: plugin.rangeLabel; color: plugin.cTextDim
+                    elide: Text.ElideRight; Layout.fillWidth: true
+                }
                 Button {
                     text: "Usa la selezione corrente"
-                    onClicked: { captureRange(); setStatus("Intervallo aggiornato. " + rangeLabel, false); }
+                    enabled: !plugin.busy
+                    onClicked: { captureRange(); setStatus("Intervallo aggiornato. " + rangeLabel, "info"); }
                 }
+            }
 
-                GroupBox {
-                    title: "Sorgenti"
+            // ---- impostazioni su due colonne
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                enabled: !plugin.busy
+
+                ColumnLayout {
                     Layout.fillWidth: true
-                    GridLayout {
-                        columns: 2; columnSpacing: 8; rowSpacing: 6
-                        anchors.left: parent.left; anchors.right: parent.right
-                        Label { text: "Melodia (canto dato):"; color: "#1b1b1b" }
-                        ComboBox { id: melodyCombo; model: plugin.staffNames; Layout.fillWidth: true }
-                        Label { text: "Basso:"; color: "#1b1b1b" }
-                        ComboBox { id: bassCombo; model: ["— nessuno —"].concat(plugin.staffNames); Layout.fillWidth: true }
+                    Layout.preferredWidth: 400
+                    Layout.alignment: Qt.AlignTop
+                    spacing: 8
+
+                    GroupBox {
+                        title: "Sorgenti"
+                        Layout.fillWidth: true
+                        GridLayout {
+                            columns: 2; columnSpacing: 8; rowSpacing: 6
+                            anchors.left: parent.left; anchors.right: parent.right
+                            Label { text: "Melodia (canto dato):"; color: plugin.cText }
+                            ComboBox { id: melodyCombo; model: plugin.staffNames; Layout.fillWidth: true }
+                            Label { text: "Basso:"; color: plugin.cText }
+                            ComboBox { id: bassCombo; model: ["— nessuno —"].concat(plugin.staffNames); Layout.fillWidth: true }
+                        }
                     }
-                }
 
-                GroupBox {
-                    title: "Destinazione"
-                    Layout.fillWidth: true
-                    ColumnLayout {
-                        anchors.left: parent.left; anchors.right: parent.right
-                        RadioButton { id: newStaffRadio; text: "Nuovo rigo (aggiunto in fondo alla partitura)"; checked: true }
-                        RowLayout {
-                            enabled: newStaffRadio.checked
-                            Layout.leftMargin: 28
-                            Label { text: "Strumento:"; color: "#1b1b1b" }
+                    GroupBox {
+                        title: "Destinazione"
+                        Layout.fillWidth: true
+                        GridLayout {
+                            columns: 2; columnSpacing: 8; rowSpacing: 4
+                            anchors.left: parent.left; anchors.right: parent.right
+                            RadioButton {
+                                id: newStaffRadio; text: "Nuovo rigo"; checked: true
+                                ToolTip.visible: hovered; ToolTip.delay: 600
+                                ToolTip.text: "Aggiunge un rigo in fondo alla partitura con lo strumento scelto"
+                            }
                             ComboBox {
                                 id: instrumentCombo
                                 Layout.fillWidth: true
+                                enabled: newStaffRadio.checked || (variantsSpin.value > 1 && separateCheck.checked)
+                                opacity: enabled ? 1 : 0.45
                                 model: plugin.instruments.map(function (x) { return x.label; })
                             }
+                            RadioButton { id: existingRadio; text: "Rigo esistente" }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                enabled: existingRadio.checked
+                                opacity: enabled ? 1 : 0.45
+                                ComboBox { id: targetStaffCombo; model: plugin.staffNames; Layout.fillWidth: true }
+                                ComboBox { id: voiceCombo; model: ["Voce 1", "Voce 2", "Voce 3", "Voce 4"]; currentIndex: 1; Layout.preferredWidth: 100 }
+                            }
                         }
-                        RadioButton { id: existingRadio; text: "Rigo esistente" }
-                        RowLayout {
-                            enabled: existingRadio.checked
-                            Layout.leftMargin: 28
-                            ComboBox { id: targetStaffCombo; model: plugin.staffNames; Layout.fillWidth: true }
-                            ComboBox { id: voiceCombo; model: ["Voce 1", "Voce 2", "Voce 3", "Voce 4"]; currentIndex: 1 }
+                    }
+
+                    GroupBox {
+                        title: "Varianti"
+                        Layout.fillWidth: true
+                        GridLayout {
+                            columns: 3; columnSpacing: 8; rowSpacing: 4
+                            anchors.left: parent.left; anchors.right: parent.right
+                            Label { text: "Varietà:"; color: plugin.cText }
+                            Slider {
+                                id: varietySlider; from: 0; to: 10; stepSize: 1; value: 3; Layout.fillWidth: true
+                                ToolTip.visible: hovered; ToolTip.delay: 600
+                                ToolTip.text: "Quanto il risultato può scostarsi dalla soluzione più corretta (0 = sempre la stessa)"
+                            }
+                            Label { text: varietySlider.value.toFixed(0); color: plugin.cText; Layout.preferredWidth: 20 }
+
+                            Label { text: "Seme:"; color: plugin.cText }
+                            RowLayout {
+                                Layout.columnSpan: 2
+                                SpinBox { id: seedSpin; from: 1; to: 99999; value: 1; editable: true }
+                                Button { text: "Nuovo seme"; onClicked: seedSpin.value = Math.floor(Math.random() * 99999) + 1 }
+                            }
+
+                            Label { text: "Quante:"; color: plugin.cText }
+                            RowLayout {
+                                Layout.columnSpan: 2
+                                SpinBox {
+                                    id: variantsSpin; from: 1; to: 8; value: 1
+                                    ToolTip.visible: hovered; ToolTip.delay: 600
+                                    ToolTip.text: "Calcola più varianti (semi consecutivi) e le ordina per qualità"
+                                }
+                                Label {
+                                    text: variantsSpin.value > 1 ? ("semi " + seedSpin.value + "–" + plugin.seedFor(seedSpin.value, variantsSpin.value - 1))
+                                                                 : "una sola variante"
+                                    color: plugin.cTextDim
+                                }
+                            }
+                            CheckBox {
+                                id: separateCheck
+                                Layout.columnSpan: 3
+                                text: "Una variante per rigo nuovo, per ascoltarle a confronto"
+                                enabled: variantsSpin.value > 1
+                                opacity: enabled ? 1 : 0.45
+                            }
                         }
                     }
                 }
 
-                GroupBox {
-                    title: "Stile"
+                ColumnLayout {
                     Layout.fillWidth: true
-                    GridLayout {
-                        columns: 2; columnSpacing: 8; rowSpacing: 6
-                        anchors.left: parent.left; anchors.right: parent.right
-                        Label { text: "Specie / ritmo:"; color: "#1b1b1b" }
-                        ComboBox { id: speciesCombo; model: plugin.speciesLabels; Layout.fillWidth: true }
-                        Label { text: "Posizione:"; color: "#1b1b1b" }
-                        ComboBox { id: positionCombo; model: plugin.positionLabels; Layout.fillWidth: true }
-                        Label { text: "Registro:"; color: "#1b1b1b" }
-                        ComboBox { id: registerCombo; model: plugin.registerLabels; Layout.fillWidth: true }
-                        Label { text: "Regole:"; color: "#1b1b1b" }
-                        ComboBox {
-                            id: strictCombo; Layout.fillWidth: true
-                            model: ["Rigorose (accademiche)", "Libere (appoggiature, settime, dirette tollerate)"]
+                    Layout.preferredWidth: 400
+                    Layout.alignment: Qt.AlignTop
+                    spacing: 8
+
+                    GroupBox {
+                        title: "Stile"
+                        Layout.fillWidth: true
+                        GridLayout {
+                            columns: 2; columnSpacing: 8; rowSpacing: 6
+                            anchors.left: parent.left; anchors.right: parent.right
+                            Label { text: "Specie / ritmo:"; color: plugin.cText }
+                            ComboBox { id: speciesCombo; model: plugin.speciesLabels; Layout.fillWidth: true }
+                            Label { text: "Posizione:"; color: plugin.cText }
+                            ComboBox { id: positionCombo; model: plugin.positionLabels; Layout.fillWidth: true }
+                            Label { text: "Registro:"; color: plugin.cText }
+                            ComboBox { id: registerCombo; model: plugin.registerLabels; Layout.fillWidth: true }
+                            Label { text: "Regole:"; color: plugin.cText }
+                            ComboBox {
+                                id: strictCombo; Layout.fillWidth: true
+                                model: ["Rigorose (accademiche)", "Libere (appoggiature, settime, dirette tollerate)"]
+                            }
+                            Label { text: "Modo:"; color: plugin.cText }
+                            ComboBox { id: modeCombo; model: ["Automatico", "Maggiore", "Minore"]; Layout.fillWidth: true }
+                            Label { text: "Metro:"; color: plugin.cText }
+                            ComboBox { id: meterCombo; model: ["Automatico", "Semplice (2/4, 3/4, 4/4…)", "Composto (6/8, 9/8, 12/8…)"]; Layout.fillWidth: true }
+                            CheckBox { id: imitationCheck; Layout.columnSpan: 2; text: "Imita il motivo della melodia nelle sue pause"; checked: true }
+                            CheckBox { id: tiesCheck; Layout.columnSpan: 2; text: "Lega le note tenute (legature di valore)"; checked: true }
                         }
-                        Label { text: "Modo:"; color: "#1b1b1b" }
-                        ComboBox { id: modeCombo; model: ["Automatico", "Maggiore", "Minore"]; Layout.fillWidth: true }
-                        Label { text: "Metro:"; color: "#1b1b1b" }
-                        ComboBox { id: meterCombo; model: ["Automatico", "Semplice (2/4, 3/4, 4/4…)", "Composto (6/8, 9/8, 12/8…)"]; Layout.fillWidth: true }
                     }
                 }
+            }
 
-                CheckBox { id: imitationCheck; text: "Imita il motivo della melodia nelle sue pause"; checked: true }
-                CheckBox { id: tiesCheck; text: "Lega le note tenute (legature di valore)"; checked: true }
+            // ---- risultati: elenco delle varianti e messaggi
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumHeight: 110
+                spacing: 12
 
-                RowLayout {
+                Rectangle {
                     Layout.fillWidth: true
-                    Label { text: "Varietà:"; color: "#1b1b1b" }
-                    Slider { id: varietySlider; from: 0; to: 10; stepSize: 1; value: 3; Layout.fillWidth: true }
-                    Label { text: varietySlider.value.toFixed(0); color: "#1b1b1b"; Layout.preferredWidth: 20 }
-                }
-                RowLayout {
-                    Label { text: "Seme:"; color: "#1b1b1b" }
-                    SpinBox { id: seedSpin; from: 1; to: 99999; value: 1; editable: true }
-                    Button { text: "Nuovo seme"; onClicked: seedSpin.value = Math.floor(Math.random() * 99999) + 1 }
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 400
+                    color: plugin.cField; border.color: plugin.cBorder; radius: 4
+
+                    ListView {
+                        id: candList
+                        anchors.fill: parent; anchors.margins: 4
+                        clip: true
+                        spacing: 2
+                        model: plugin.candidates
+                        ScrollBar.vertical: ScrollBar { }
+                        delegate: Rectangle {
+                            width: candList.width - 10
+                            height: candCol.implicitHeight + 10
+                            radius: 3
+                            readonly property bool sel: index === plugin.chosen
+                            color: sel ? Qt.rgba(plugin.cAccent.r, plugin.cAccent.g, plugin.cAccent.b, 0.25)
+                                       : (candMouse.containsMouse ? Qt.rgba(plugin.cText.r, plugin.cText.g, plugin.cText.b, 0.07) : "transparent")
+                            border.color: sel ? plugin.cAccent : "transparent"
+                            Column {
+                                id: candCol
+                                x: 8; y: 5; width: parent.width - 16; spacing: 1
+                                Label {
+                                    width: parent.width; elide: Text.ElideRight
+                                    text: plugin.candTitle(index); color: plugin.cText; font.bold: parent.parent.sel
+                                }
+                                Label {
+                                    width: parent.width; elide: Text.ElideRight
+                                    text: plugin.candStats(index); font.pixelSize: 11
+                                    color: modelData.res.report.parallels ? plugin.cError : plugin.cTextDim
+                                }
+                            }
+                            MouseArea {
+                                id: candMouse
+                                anchors.fill: parent; hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: plugin.chooseCandidate(index)
+                            }
+                        }
+                    }
+                    Label {
+                        anchors.centerIn: parent
+                        width: parent.width - 32
+                        visible: plugin.candidates.length < 2
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        color: plugin.cTextDim
+                        text: plugin.candidates.length ? "" :
+                              "Con «Quante» maggiore di 1 qui compare la classifica delle varianti: cliccane una per ascoltarla al posto della precedente."
+                    }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: statusText.implicitHeight + 16
-                    color: "#ffffff"; border.color: "#cccccc"; radius: 4
-                    Text {
-                        id: statusText
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 400
+                    color: plugin.cField; border.color: plugin.cBorder; radius: 4
+                    Flickable {
+                        id: statusFlick
                         anchors.fill: parent; anchors.margins: 8
-                        wrapMode: Text.WordWrap
-                        color: "#1b1b1b"
+                        clip: true
+                        contentHeight: statusText.implicitHeight
+                        ScrollBar.vertical: ScrollBar { }
+                        Text {
+                            id: statusText
+                            width: statusFlick.width
+                            wrapMode: Text.WordWrap
+                            color: plugin.statusColor
+                        }
                     }
                 }
+            }
 
-                RowLayout {
-                    Layout.alignment: Qt.AlignRight
-                    Button { text: "Genera"; highlighted: true; onClicked: generate() }
-                    Button { text: "Chiudi"; onClicked: quit() }
+            // ---- pulsanti
+            RowLayout {
+                Layout.fillWidth: true
+                BusyIndicator { running: plugin.busy; visible: plugin.busy; Layout.preferredHeight: 28; Layout.preferredWidth: 28 }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: variantsSpin.value > 1 ? ("Genera " + variantsSpin.value + " varianti") : "Genera"
+                    highlighted: true; enabled: !plugin.busy
+                    onClicked: generate()
                 }
+                Button { text: "Chiudi"; enabled: !plugin.busy; onClicked: quit() }
             }
         }
     }
