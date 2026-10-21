@@ -5,7 +5,8 @@
 
 Genera una contro-melodia in contrappunto a partire da una melodia (canto
 dato) e, se presente, da un basso, e la scrive in un nuovo rigo oppure in una
-voce di un rigo esistente.
+voce di un rigo esistente. Analizza anche una voce scritta a mano con le
+stesse regole e rigenera una variante mantenendo le note scelte.
 
 
 ------------------------------------------------------------------------------
@@ -39,7 +40,12 @@ voce di un rigo esistente.
  * Riconoscimento automatico di tonalità, modo (maggiore/minore) e metro
    (semplice/composto), anche con cambi di armatura.
  * Imitazione: nelle pause della melodia il contrappunto riprende il suo
-   ultimo motivo.
+   ultimo motivo; entrata in imitazione facoltativa (libero e fiorito).
+ * Figure della 3a specie: cambiata e doppia volta.
+ * Niente tritoni o settime delineati; clausola finale a due voci.
+ * Analisi di una voce scritta: errori in rosso, avvisi in arancione.
+ * Rigenera il resto: mantiene le note scelte e ricalcola le altre.
+ * Le impostazioni vengono ricordate da una volta all'altra.
  * Risultato deterministico: stesse impostazioni e stesso seme danno sempre
    lo stesso contrappunto.
  * Confronto di più varianti ordinate per qualità, nella stessa
@@ -102,14 +108,29 @@ Confrontare più varianti
  1. Imposta "Quante" a un valore da 2 a 8 e premi "Genera N varianti".
  2. Il plugin calcola le varianti (semi consecutivi, indicati accanto al
     campo) e le elenca dalla migliore. Per ciascuna mostra il punteggio, la
-    percentuale di gradi congiunti e di moto contrario, il numero di culmini
-    e l'eventuale presenza di parallele.
+    percentuale di gradi congiunti e di moto contrario, il numero di culmini,
+    l'eventuale presenza di parallele e gli errori e gli avvisi trovati
+    dall'analisi (a parità di parallele vengono prima quelle con meno errori).
  3. La migliore è già scritta nella destinazione. Clicca un'altra variante
     per sostituirla e ascoltarla; il suo seme passa nel campo "Seme", così
     puoi ritrovarla in seguito.
  4. In alternativa attiva "Una variante per rigo nuovo": ogni variante va in
     un rigo nuovo con l'etichetta "Variante N - seme S". Ascoltale, tieni
     quella che preferisci ed elimina gli altri righi (oppure Ctrl+Z).
+
+Analizzare una voce
+ 1. In Destinazione scegli "Rigo esistente" e la voce da controllare (dopo
+    una generazione in un nuovo rigo è già quel rigo).
+ 2. Premi "Analizza la voce". Le note con un errore diventano rosse, quelle
+    con un avviso arancioni; l'elenco con le battute compare nella finestra.
+ 3. Correggi e premi di nuovo "Analizza la voce": i colori della volta
+    precedente vengono tolti. Ctrl+Z toglie i colori subito.
+
+Rigenerare il resto
+ 1. Nella voce generata cambia a mano le note che vuoi tenere, oppure
+    selezionale con Ctrl+clic.
+ 2. Premi "Rigenera il resto": quelle note restano com'erano e tutte le
+    altre vengono ricalcolate intorno a loro, con le stesse impostazioni.
 
 Consigli
  * Per un canto dato breve prova le specie 1:1, 2:1 e ritardi; per un brano
@@ -130,6 +151,8 @@ Consigli
  Regole           Rigorose (accademiche) o Libere
  Modo / Metro     Automatici, oppure forzati
  Imitazione       Nelle pause della melodia riprende il suo ultimo motivo
+ Entrata in       (libero e fiorito) Tace mentre la melodia espone il suo
+ imitazione       inizio, poi lo riprende all'ottava, quinta o quarta
  Legature         Unisce con legature di valore le note tenute
  Varietà / Seme   Scostamento dalla soluzione più corretta; stesso seme =
                   stesso risultato
@@ -150,6 +173,11 @@ Consigli
    fare brevi pause per evitare quinte od ottave parallele.
  * Dove la melodia esce dal registro della voce, la voce passa dall'altra
    parte della melodia (scambio delle parti) per quelle battute.
+ * L'entrata in imitazione richiede almeno tre note all'inizio della
+   melodia; con un basso già scritto riprende spesso solo una parte degli
+   intervalli.
+ * "Rigenera il resto" usa le note selezionate se la versione di MuseScore
+   lascia leggere la selezione; altrimenti le note cambiate a mano.
 
 
 ------------------------------------------------------------------------------

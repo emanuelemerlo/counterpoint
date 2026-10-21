@@ -62,8 +62,11 @@ var CASES = [
 ];
 
 var seed = parseInt(process.argv[2] || "7");
-var species = (process.argv[3] || "free,florid,2:1,sus,1:1").split(",");
-var totalPar = 0;
+var species = (process.argv[3] || "free,florid,2:1,4:1,sus,1:1").split(",");
+var totalPar = 0, failures = [];
+function check(ok, msg) { if (!ok) { failures.push(msg); console.log("  FALLITO: " + msg); } }
+// rilievi dell'analisi che il generatore non deve mai produrre
+var NEVER = { parallel5: 1, parallel8: 1, dissonance: 1, suspension: 1, crossing: 1 };
 CASES.forEach(function (cs) {
     var m = parse(cs.mel), b = cs.bass ? parse(cs.bass) : { events: [], end: 0 };
     var end = Math.max(m.end, b.end);
@@ -88,7 +91,56 @@ CASES.forEach(function (cs) {
         });
         console.log(line.join(" "));
         if (r.details.length) console.log("  ! " + r.details.join("; "));
+        console.log("controllo: " + r.errors + " errori, " + r.warnings + " avvisi" +
+                    (r.findings.length ? " – " + r.findings.map(function (f) { return f.rule + "@" + f.tick; }).join(" ") : ""));
+        r.findings.forEach(function (f) { check(!NEVER[f.rule], cs.title + " [" + sp + "]: " + f.text + " a tick " + f.tick); });
     });
 });
+
+// ---------------------------------------------------------------- funzioni nuove
+function input(cs, opts) {
+    var m = parse(cs.mel), b = cs.bass ? parse(cs.bass) : { events: [], end: 0 }, end = Math.max(m.end, b.end);
+    var o = { seed: seed, mode: cs.mode || "auto", position: cs.position || "auto" };
+    for (var k in opts) o[k] = opts[k];
+    return { melody: m.events, bass: b.events, measures: measures(end, cs.num, cs.den), keys: [{ tick: 0, sharps: cs.sharps }],
+             start: 0, end: end, options: o };
+}
+console.log("\n== Analisi di una voce con errori noti");
+var bad = E.analyze({
+    melody: parse("C4:w D4:w E4:w F4:w G4:w F4:w").events, bass: [], measures: measures(6 * 1920, 4, 4), keys: [{ tick: 0, sharps: 0 }],
+    start: 0, end: 6 * 1920, line: parse("G4:w A4:w B4:w D4:w D5:w C5:w").events });
+bad.findings.forEach(function (f) { console.log("  " + f.tick + " " + f.level + " " + f.text); });
+var rules = bad.findings.map(function (f) { return f.rule; });
+check(rules.filter(function (x) { return x === "parallel5"; }).length === 3, "l'analisi deve trovare tre coppie di quinte parallele");
+check(rules.indexOf("crossing") >= 0, "l'analisi deve trovare l'incrocio delle voci");
+
+console.log("\n== Note fissate");
+var lk = [{ tick: 1920, dur: 960, midi: 67, tpc: 15 }, { tick: 5760, dur: 480, midi: 72, tpc: 14 }];
+var rl = E.generate(input(CASES[0], { species: "free", locked: lk }));
+lk.forEach(function (l) {
+    var hit = rl.items.filter(function (x) { return x.tick === l.tick; })[0];
+    console.log("  tick " + l.tick + ": attesa " + l.midi + "/" + l.dur + ", scritta " + (hit ? hit.midi + "/" + hit.ticks : "nulla"));
+    check(hit && hit.midi === l.midi && hit.tpc === l.tpc && hit.ticks === l.dur, "la nota fissata a tick " + l.tick + " deve restare com'è");
+});
+check(rl.report.locked === 2 && rl.report.parallels === 0, "note fissate: report e assenza di parallele");
+
+console.log("\n== Entrata in imitazione");
+var re = E.generate(input(CASES[0], { species: "free", entry: true }));
+console.log("  " + JSON.stringify(re.report.entry) + "  inizio: " + re.items.slice(0, 5).map(name).join(" "));
+check(re.report.entry && re.items[0].midi === null && re.items[0].tick === 0, "con l'entrata in imitazione il contrappunto inizia con una pausa");
+check(re.report.entry && re.report.entry.matched >= 1, "l'entrata deve riprendere almeno un intervallo della melodia");
+
+console.log("\n== Figure della 3ª specie (cambiata, doppia volta)");
+var fig = 0;
+for (var sd = 1; sd <= 6; sd++) {
+    [CASES[2], CASES[3]].forEach(function (cs) {
+        var rf = E.generate(input(cs, { species: "4:1", seed: sd }));
+        fig += rf.report.figures.cambiata + rf.report.figures.double;
+    });
+}
+console.log("  cambiate e doppie volte in 12 contrappunti 4:1: " + fig);
+check(fig > 0, "il 4:1 deve poter usare cambiata o doppia volta");
+
 console.log("\nTotale parallele: " + totalPar);
-process.exit(totalPar ? 1 : 0);
+if (failures.length) console.log("Controlli falliti: " + failures.length);
+process.exit(totalPar || failures.length ? 1 : 0);

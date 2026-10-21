@@ -4,6 +4,51 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.6.0
+
+### Novità
+- **Analizza la voce**: controlla una voce già scritta (a mano o dal plugin)
+  rispetto a melodia e basso con le regole del motore e colora le note: rosso
+  per gli errori (quinte e ottave parallele, dissonanze non preparate o non
+  risolte, ritardi che non scendono, salti non ammessi, incroci), arancione per
+  gli avvisi (dirette, tritoni e settime delineati, salti non recuperati,
+  sensibile, false relazioni, culmine ripetuto, finale). L'elenco con i numeri
+  di battuta compare nella finestra; Ctrl+Z toglie i colori.
+- **Rigenera il resto**: mantiene le note selezionate nella voce di
+  destinazione, oppure quelle cambiate a mano rispetto alla variante scritta, e
+  ricalcola tutte le altre intorno a loro.
+- **Entrata in imitazione** (libero e fiorito): il contrappunto tace mentre la
+  melodia espone il suo inizio, poi lo riprende all'ottava, alla quinta o alla
+  quarta. La finestra indica quanti intervalli sono stati ripresi.
+- Cambiata e doppia volta nel 4:1, nel fiorito e nel libero.
+- Il plugin ricorda le impostazioni da una volta all'altra.
+- Ogni variante viene controllata con l'analisi: errori e avvisi compaiono
+  nell'elenco e, a parità di parallele, le varianti con meno errori vengono
+  prima.
+
+### Miglioramenti musicali
+- Niente tritoni o settime delineati da tratti nella stessa direzione: sui casi
+  di prova (6 brani, 6 specie, 6 semi) scendono da 233 a 52.
+- Clausola finale a due voci: sesta maggiore → ottava (contrappunto sopra) o
+  terza minore → unisono (sotto), per moto contrario.
+- Nelle specie con la griglia sulla melodia (2:1, 4:1, ritardi) le suddivisioni
+  di una nota del canto dato contano come tempi deboli anche quando cadono su un
+  tempo della battuta: nel 4:1 su semibrevi le note di passaggio sul 2°, 3° e 4°
+  tempo non vengono più trattate come appoggiature.
+
+### Correzioni
+- A due voci, con il contrappunto sopra il canto dato, la quarta e il tritono
+  con il canto dato sono dissonanze (prima il motore li considerava consonanti
+  come tra due voci superiori).
+
+### Pacchetto
+- Nella release la cartella del plugin si chiama `contrappunto`, in minuscolo.
+  Se aggiorni, elimina prima la vecchia cartella `Contrappunto`.
+
+### Nota
+- A parità di impostazioni e seme il risultato è diverso da quello della 2.5.0,
+  e i punteggi non sono confrontabili.
+
 ## 2.5.0
 
 ### Correzioni

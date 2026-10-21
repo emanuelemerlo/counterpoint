@@ -16,6 +16,9 @@
  *   options      : vedi DEFAULTS
  *
  * Output: { items: [{ tick, ticks, midi|null, tpc, tieNext }], report: {...} }
+ *
+ * analyze() controlla invece una voce già scritta (input.line) con le stesse regole
+ * e ritorna i rilievi: { findings: [{ tick, rule, level, text }], report: {...} }.
  */
 
 var WHOLE = 1920;
@@ -29,6 +32,8 @@ var DEFAULTS = {
     mode: "auto",           // "auto" | "major" | "minor"
     meter: "auto",          // "auto" | "simple" | "compound"
     imitation: true,        // eco del motivo nelle pause della melodia
+    entry: false,           // entrata in imitazione: il contrappunto entra dopo la melodia riprendendone l'inizio
+    locked: null,           // [{ tick, dur, midi, tpc }] note fissate dall'utente: il resto si ricalcola intorno
     variety: 3,             // 0..10, casualità controllata
     seed: 1,
     instrument: null,       // { lo, hi } estensione MIDI (suoni reali) dello strumento di destinazione
@@ -303,6 +308,8 @@ function generate(input) {
 
     var C = { opt: opt, start: input.start, end: input.end, rng: makeRng(opt.seed), notes: [] };
     C.strict = opt.strictness !== "free";
+    // cambiata e doppia volta: 3ª specie (4:1), fiorito e libero
+    C.figures = opt.species === "4:1" || opt.species === "florid" || opt.species === "free";
     C.ms = prepMeasures(input.measures, opt.meter);
     if (!C.ms.length) throw "Nessuna misura nell'intervallo.";
     C.melLine = buildLine(input.melody || [], C.start, C.end, true);
@@ -310,6 +317,11 @@ function generate(input) {
     var hasMel = C.melLine.some(function (s) { return s.note; });
     if (!hasMel) throw "La melodia non contiene note nell'intervallo scelto.";
     C.hasBass = C.bassLine.some(function (s) { return s.note; });
+    C.locked = (opt.locked || []).filter(function (l) { return l && l.dur > 0 && l.tick >= C.start && l.tick < C.end; })
+        .map(function (l) { return { tick: l.tick, dur: Math.min(l.dur, C.end - l.tick), midi: l.midi, tpc: l.tpc }; })
+        .sort(function (a, b) { return a.tick - b.tick; });
+    for (var li = 1; li < C.locked.length; li++)        // sovrapposte: vince la prima
+        if (C.locked[li].tick < C.locked[li - 1].tick + C.locked[li - 1].dur) { C.locked.splice(li, 1); li--; }
 
     detectKeys(C, input.keys || []);
     chooseRange(C);
@@ -333,6 +345,19 @@ function generate(input) {
     report.events = events.length;
     report.notes = items.filter(function (x) { return x.midi !== null; }).length;
     report.quality = Math.round(C.quality * 100) / 100;
+    report.locked = C.locked.length;
+    // controllo della variante con le regole dell'analisi (stesse regole, dal punto di vista di chi legge)
+    try {
+        var roles = [], lastRole = null;
+        for (var ri = 0; ri < events.length; ri++) if (events[ri].role !== lastRole) { lastRole = events[ri].role; roles.push({ t: events[ri].tick, role: lastRole }); }
+        var chk = analyze({ melody: input.melody, bass: input.bass, measures: input.measures, keys: input.keys,
+                            start: input.start, end: input.end, options: opt, roles: roles, line: itemsToLine(items) });
+        report.findings = chk.findings;
+        report.errors = chk.report.errors;
+        report.warnings = chk.report.warnings;
+        report.figures = chk.report.figures;
+    } catch (e) { report.findings = []; report.errors = 0; report.warnings = 0; }
+    report.entry = C.entry ? entryReport(C, events, path) : null;
     report.signature = items.map(function (x) { return x.tick + ":" + x.ticks + ":" + x.midi; }).join(",");
     return { items: items, report: report, events: events, path: path };
 }
@@ -594,6 +619,7 @@ function planEvents(C) {
     function gapOf(t) { for (var g = 0; g < gaps.length; g++) if (t >= gaps[g].t0 && t < gaps[g].t1) return gaps[g]; return null; }
 
     var melodyGrid = (sp === "1:1" || sp === "2:1" || sp === "4:1" || sp === "sus");
+    C.melodyGrid = melodyGrid;
     if (melodyGrid) {
         var div = sp === "4:1" ? 4 : (sp === "1:1" ? 1 : 2);
         var line = C.melLine;
@@ -628,6 +654,22 @@ function planEvents(C) {
     var ticks = Object.keys(on).map(Number).filter(function (x) { return x >= C.start && x < C.end; });
     ticks = ticks.filter(function (x) { return !gapOf(x); });
     for (i = 0; i < gaps.length; i++) for (var q = 0; q < gaps[i].onsets.length; q++) ticks.push(gaps[i].onsets[q]);
+    // entrata in imitazione: pausa iniziale, poi il ritmo dell'inizio della melodia
+    var E0 = C.opt.entry && (sp === "free" || sp === "florid") ? planEntry(C) : null;
+    C.entry = E0;
+    if (E0) {
+        ticks = ticks.filter(function (x) { return x < C.start || x >= E0.t1; });
+        ticks.push(C.start, E0.t1);
+        for (i = 0; i < E0.onsets.length; i++) ticks.push(E0.onsets[i]);
+    }
+    // note fissate dall'utente: ognuna è un evento intero
+    var L = C.locked;
+    for (i = 0; i < L.length; i++) {
+        var la = L[i].tick, lb = L[i].tick + L[i].dur;
+        ticks = ticks.filter(function (x) { return x <= la || x >= lb; });
+        ticks.push(la);
+        if (lb < C.end) ticks.push(lb);
+    }
     // attacchi del basso in contrappunto fiorito/libero
     ticks = uniqSort(ticks);
     var events = [];
@@ -637,10 +679,43 @@ function planEvents(C) {
         var ev = { tick: t0, dur: t1 - t0 };
         var g = gapOf(t0);
         if (g) { ev.gap = g; ev.gapIdx = g.onsets.indexOf(t0); ev.gapInt = ev.gapIdx >= 1 ? g.ints[ev.gapIdx - 1] : null; }
+        if (E0) {
+            if (t0 < E0.t0) ev.entryRest = true;
+            var ki = E0.onsets.indexOf(t0);
+            if (ki >= 0) ev.imit = { k: ki, int: ki > 0 ? E0.ints[ki - 1] : null };
+        }
+        for (var li = 0; li < L.length; li++) if (L[li].tick === t0) ev.lock = L[li];
         events.push(ev);
     }
     return events;
 }
+// Entrata in imitazione: il contrappunto tace mentre la melodia espone il suo
+// inizio (una battuta, oppure due o mezza se servono) e poi ne riprende il ritmo e
+// gli intervalli, a partire dall'ottava, dalla quinta o dalla quarta della prima nota.
+function planEntry(C) {
+    var line = C.melLine, atts = [], i;
+    for (i = 0; i < line.length; i++) if (line[i].note && line[i].attack) atts.push(line[i]);
+    if (atts.length < 4) return null;
+    var a0 = atts[0].t, m = measureAt(C.ms, a0);
+    var tries = [m.nominal, 2 * m.nominal, m.nominal / 2];
+    for (var k = 0; k < tries.length; k++) {
+        var D = tries[k];
+        if (D < m.beat || a0 + 2 * D + m.nominal > C.end) continue;
+        var head = atts.filter(function (x) { return x.t < a0 + D; });
+        if (head.length < 3 || head.length > 10) continue;
+        if (head.some(function (x) { return (x.t - a0) % 60 !== 0; })) continue;
+        var t0 = a0 + D, on = [], ints = [];
+        for (i = 0; i < head.length; i++) {
+            on.push(t0 + head[i].t - a0);
+            if (i > 0) ints.push(head[i].note.dia - head[i - 1].note.dia);
+        }
+        if (!ints.some(function (x) { return x !== 0; })) continue;
+        if (C.locked.some(function (l) { return l.tick < t0 + D; })) return null;
+        return { t0: t0, t1: t0 + D, onsets: on, ints: ints, pc: head[0].note.pc, dia: head[0].note.dia, len: head.length };
+    }
+    return null;
+}
+
 function uniqSort(a) {
     a.sort(function (x, y) { return x - y; });
     var o = [];
@@ -733,6 +808,13 @@ function annotate(C, events) {
         }
         var ms = segAt(C.melLine, t);
         ev.melAttack = !!(ms && ms.t === t && ms.attackAny);
+        // specie con griglia sulla melodia (2:1, 4:1, ritardi): le suddivisioni di una nota
+        // del canto dato sono tempi deboli rispetto a quella nota, anche se cadono su un
+        // tempo della battuta (es. 4:1 su semibrevi in 4/4). Lì valgono note di passaggio,
+        // di volta e figure come la cambiata; l'arrivo di una nota del basso resta forte.
+        var bs = segAt(C.bassLine, t);
+        if (C.melodyGrid && ev.mel && !ev.melAttack && !(bs && bs.t === t && bs.attackAny))
+            ev.strength = Math.min(ev.strength, (C.opt.species === "4:1" && (t - ms.t) * 2 === (ms.noteEnd || ms.end) - ms.t) ? 1.5 : 1);
         ev.melSilent = !ev.mel;
         ev.others = othersAt(C, t, ev.mel, ev.bass);
         ev.chord = chordAt(C, t);
@@ -753,6 +835,8 @@ function annotate(C, events) {
             }
         });
         ev.rest = !ev.mel && !ev.bass && !ev.inner.some(function (x) { return x.mel || x.bass; });
+        if (ev.entryRest) ev.rest = true;
+        if (ev.lock) ev.rest = false;
         ev.role = C.role; ev.lo = C.lo; ev.hi = C.hi;
         ev.chromatic = chromaticAt(C, ev);
         ev.crowded = crowdedFor(ev, ev.role, ev.lo, ev.hi);
@@ -921,9 +1005,11 @@ function staticScore(C, ev, c) {
         if (im < 0) s -= 60; else if (im === 0) s -= 30;
         var cm = mod(im, 12);
         var melCT = ch ? !!ch.set[mel.pc] : true;
-        var dissTable = (role === "below") ? DISS_LOW : DISS_UP;
+        // senza basso e con il contrappunto sopra, la melodia è la voce più grave: quarta e tritono sono dissonanze
+        var melLowest = role === "above" && !bass;
+        var dissTable = (role === "below" || melLowest) ? DISS_LOW : DISS_UP;
         // tritono tra voci superiori: dissonante, salvo che entrambe le note siano dell'accordo (V7, diminuito)
-        var triOK = cm === 6 && ch && ch.set[c.pc] && ch.set[mel.pc];
+        var triOK = cm === 6 && ch && ch.set[c.pc] && ch.set[mel.pc] && !melLowest;
         if (dissTable[cm] || (cm === 6 && !triOK)) { if (melCT) r.dissM = true; else s -= 8; }
         else if (cm === 3 || cm === 4 || cm === 8 || cm === 9) s += (role === "middle" ? 3 : 6);
         if (im > 12) s -= (im - 12) * 2;
@@ -1014,7 +1100,7 @@ function evalTransition(C, ev, node, c, st, relax) {
     var hold = !!p && p.midi === c.midi;
     var d = p ? c.dia - p.dia : 0, mv = p ? c.midi - p.midi : 0, ad = Math.abs(d);
     var pend = null, diss = st.dissB || st.dissM;
-    var sp = C.opt.species;
+    var sp = C.opt.species, figLand = false, strongPos = ev.strength >= 2;
 
     // 1. obblighi lasciati dalla nota precedente
     if (node.pend) {
@@ -1024,7 +1110,21 @@ function evalTransition(C, ev, node, c, st, relax) {
             else s -= 120;
         } else if (node.pend === "step") {
             if (ad === 1) { if (diss && sign(d) !== sign(node.lastD)) s -= 60; }
+            else if (ad === 2 && C.figures && !hold && !strongPos && node.ppC) {
+                // la dissonanza (raggiunta per grado) lascia per salto di terza solo in due figure:
+                // cambiata: stessa direzione dell'arrivo (nel rigoroso solo in discesa), su una consonanza;
+                // doppia volta: direzione opposta, sull'altra vicina della nota di partenza X.
+                var lastDir = sign(node.lastD);
+                var cambiata = sign(d) === lastDir && !diss && (lastDir < 0 || !strict);
+                var doppia = sign(d) === -lastDir && c.dia === node.ppC.dia - lastDir;
+                if (cambiata || doppia) { s -= (cambiata ? 5 : 7); pend = d > 0 ? "res-" : "res+"; figLand = true; }
+                else s -= 120;
+            }
             else s -= 120;
+        } else if (node.pend === "res+" || node.pend === "res-") {
+            // dopo il salto della figura: grado congiunto in direzione opposta al salto
+            var want = node.pend === "res+" ? 1 : -1;
+            if (d === want) s += 6; else if (hold) s -= 60; else s -= 110;
         } else if (node.pend === "down") {
             if (d === -1) s += 8; else if (hold) s -= 6; else s -= 35;
         }
@@ -1032,7 +1132,6 @@ function evalTransition(C, ev, node, c, st, relax) {
 
     // 2. trattamento della dissonanza corrente
     if (diss) {
-        var strongPos = ev.strength >= 2;
         if (!p) s -= 90;
         else if (hold) {
             if (node.cons) { s -= strongPos ? 2 : 8; pend = "sus"; if (sp === "sus") s += 18; }
@@ -1041,7 +1140,8 @@ function evalTransition(C, ev, node, c, st, relax) {
             if (strongPos) { s -= strict ? 60 : 20; }   // appoggiatura (solo nello stile libero)
             else s -= 4;                               // nota di passaggio / di volta
             pend = "step";
-        } else s -= strict ? 100 : 60;                 // dissonanza per salto
+        } else if (figLand) s -= 2;                    // seconda vicina della doppia volta (pend già fissato)
+        else s -= strict ? 100 : 60;                   // dissonanza per salto
         if (sp === "1:1") s -= 80;                     // nota contro nota: niente dissonanze
     } else if (st.sev) { pend = "down"; s -= 1; }
 
@@ -1056,7 +1156,15 @@ function evalTransition(C, ev, node, c, st, relax) {
 
     // 4. linea melodica
     var run = node.run, newMax = node.maxM, newCnt = node.maxCnt, newMaxIdx = node.maxIdx;
+    var segStart = node.segStart, segLen = node.segLen;
     if (p && !hold) {
+        // tratti nella stessa direzione: il punto di svolta non deve delineare un tritono o una settima
+        if (segStart < 0 || node.run === 0) { segStart = p.midi; segLen = 1; }
+        else if (sign(d) === sign(node.run)) segLen++;
+        else {
+            s -= outlinePenalty(C, segLen, Math.abs(p.midi - segStart));
+            segStart = p.midi; segLen = 1;
+        }
         var am = Math.abs(mv);
         if (ad === 0) s -= 40;
         else if (ad === 1) s += (am === 3 ? -90 : 16);
@@ -1099,6 +1207,7 @@ function evalTransition(C, ev, node, c, st, relax) {
     }
 
     // 5. ritmo: tenere o muoversi
+    if (hold && (c.locked || p.locked)) s -= 30;      // il ritmo delle note fissate resta quello dell'utente
     if (hold) {
         var hb;
         if (sp === "sus") hb = (ev.strength >= 2 ? 14 : -10);
@@ -1152,6 +1261,33 @@ function evalTransition(C, ev, node, c, st, relax) {
 
     // 8. cadenza: avvicinamento per grado
     if ((ev.isCad || ev.isFinal) && p && !hold && ev.role !== "below") s += (ad === 1 ? 10 : (ad === 2 ? 2 : -6));
+    // clausola finale a due voci: se la melodia arriva per grado, sesta maggiore -> ottava
+    // (contrappunto sopra) o terza minore -> unisono/ottava (sotto), per moto contrario
+    if (ev.isFinal && p && !hold && ev.mel && ev.melPrev && ev.role !== "middle" &&
+        Math.abs(ev.mel.dia - ev.melPrev.dia) === 1) {
+        var up = ev.role === "above";
+        var ivNow = up ? c.midi - ev.mel.midi : ev.mel.midi - c.midi;
+        var ivPrev = mod(up ? p.midi - ev.melPrev.midi : ev.melPrev.midi - p.midi, 12);
+        if (ivNow >= 0 && mod(ivNow, 12) === 0) {
+            if (ivPrev === (up ? 9 : 3)) s += 16;
+            if (ad === 1 && sign(mv) === -sign(ev.mel.midi - ev.melPrev.midi)) s += 6;
+        }
+    }
+
+    // 8b. entrata in imitazione: riprende gli intervalli dell'inizio della melodia
+    if (ev.imit) {
+        if (ev.imit.k === 0) {
+            var iv0 = mod(c.pc - C.entry.pc, 12);
+            // all'ottava, alla quinta, alla quarta; nello stile libero anche alla terza o alla sesta
+            s += iv0 === 0 ? 50 : (iv0 === 7 ? 44 : (iv0 === 5 ? 30 : ((iv0 === 3 || iv0 === 4 || iv0 === 8 || iv0 === 9) ? (strict ? 8 : 22) : -20)));
+        } else if (p) {
+            if (ev.imit.int === 0) s += hold ? 24 : -12;   // nota ribattuta del motivo: tenuta
+            else if (hold) s -= 25;
+            else if (d === ev.imit.int) s += 34;
+            else if (sign(d) === sign(ev.imit.int) && Math.abs(d - ev.imit.int) === 1) s += 6;
+            else s -= 12;
+        }
+    }
 
     // 9. evita di ripetere la stessa figura battuta dopo battuta
     if (p && !hold) {
@@ -1183,6 +1319,7 @@ function evalTransition(C, ev, node, c, st, relax) {
         hold: hold ? node.hold + 1 : 0,
         maxM: newMax, maxCnt: newCnt, maxIdx: newMaxIdx, minM: Math.min(node.minM, c.midi), span: 1,
         pend: pend, cons: !diss, pm: pm, apexHit: apexHit,
+        segStart: hold ? node.segStart : segStart, segLen: hold ? node.segLen : segLen,
         pp: hold ? node.pp : (p ? p.midi : -1), ppp: hold ? node.ppp : node.pp, ppC: hold ? node.ppC : p,
         ltActive: c.isLT && !!ev.chord && !!ev.chord.set[c.pc] && ev.chord.dominant
     };
@@ -1196,10 +1333,47 @@ function pitchAt(node, t) {           // altezza del contrappunto al tick t, ris
     return null;
 }
 
+// la nota fissata dall'utente, con i dati che servono alle regole
+function lockedCand(C, ev) {
+    var k = ev.key, info = noteInfo(ev.lock.midi, ev.lock.tpc), tl = tpcToLetter(k.tonicTpc);
+    var inScale = k.scale.some(function (x) { return tpcToPc(x.tpc) === info.pc; });
+    var raised = k.minor && (info.tpc === k.raised6 || info.tpc === k.raised7);
+    var deg = mod(info.letter - tl, 7);
+    return { midi: info.midi, tpc: info.tpc, pc: info.pc, letter: info.letter, dia: info.dia, deg: deg,
+             raised: raised, natural: k.minor && !raised && (deg === 5 || deg === 6),
+             isLT: info.pc === k.ltPc, chromatic: !inScale, locked: true };
+}
+
+// quanto il contrappunto ha davvero ripreso l'inizio della melodia
+function entryReport(C, events, path) {
+    var E = C.entry, hit = 0, tot = 0, first = null, prev = null;
+    for (var i = 0; i < events.length; i++) {
+        var ev = events[i];
+        if (!ev.imit) continue;
+        var c = path[i];
+        if (ev.imit.k === 0) { first = c; prev = c; continue; }
+        tot++;
+        if (c && prev && c.dia - prev.dia === ev.imit.int) hit++;
+        prev = c;
+    }
+    // at: intervallo dell'imitazione rispetto alla prima nota della melodia (1 = unisono/ottava, 5 = quinta, ...)
+    return { tick: E.t0, notes: E.len, intervals: tot, matched: hit,
+             at: first ? 1 + mod(first.dia - E.dia, 7) : 0 };
+}
+
 function restNode(node) {
     return { c: null, prev: node, score: node.score - (node.pend ? 100 : 0), noise: node.noise, lastD: 0, run: 0, hold: 0,
              maxM: node.maxM, maxCnt: node.maxCnt, maxIdx: node.maxIdx, minM: node.minM, span: node.span,
-             pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false, apexHit: node.apexHit };
+             pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false, apexHit: node.apexHit,
+             segStart: -1, segLen: 0 };
+}
+
+// tratto melodico di segLen movimenti nella stessa direzione che copre span semitoni
+function outlinePenalty(C, segLen, span) {
+    if (segLen < 2) return 0;                      // un salto singolo è già valutato a parte
+    if (span === 6) return C.strict ? 24 : 14;     // tritono delineato (Fa–Sol–La–Si)
+    if (span === 10 || span === 11) return C.strict ? 12 : 7;   // settima delineata
+    return 0;
 }
 
 function optionalRest(C, ev, node) {
@@ -1218,7 +1392,8 @@ function optionalRest(C, ev, node) {
 function search(C, events) {
     var B = C.opt.beam || 48;
     var root = { c: null, prev: null, score: 0, noise: 0, lastD: 0, run: 0, hold: 0, maxM: -1, maxCnt: 0, maxIdx: -1,
-                 minM: 999, pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false, apexHit: false };
+                 minM: 999, pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false, apexHit: false,
+                 segStart: -1, segLen: 0 };
     var beam = [root], i, j, n;
     for (i = 0; i < events.length; i++) {
         var ev = events[i];
@@ -1227,10 +1402,11 @@ function search(C, events) {
         if (ev.rest) {
             for (n = 0; n < beam.length; n++) { var rn = restNode(beam[n]); rn.t = ev.tick; children.push(rn); }
         } else {
-            var cands = candsFor(C, ev.key, ev.chromatic);
+            var cands = ev.lock ? [lockedCand(C, ev)] : candsFor(C, ev.key, ev.chromatic);
             var stat = [];
             for (j = 0; j < cands.length; j++) stat.push(staticScore(C, ev, cands[j]));
-            for (var pass = 0; pass < 2 && !children.length; pass++) {
+            // nota fissata: le regole contano come punteggio ma non la escludono mai
+            for (var pass = ev.lock ? 1 : 0; pass < 2 && !children.length; pass++) {
                 for (n = 0; n < beam.length; n++)
                     for (j = 0; j < cands.length; j++) {
                         var ch = evalTransition(C, ev, beam[n], cands[j], stat[j], pass === 1);
@@ -1238,7 +1414,7 @@ function search(C, events) {
                     }
             }
             // il contrappunto può anche tacere (con un costo), utile dove manca lo spazio
-            if (!ev.isFinal) for (n = 0; n < beam.length; n++) { var orn = optionalRest(C, ev, beam[n]); orn.t = ev.tick; children.push(orn); }
+            if (!ev.isFinal && !ev.lock) for (n = 0; n < beam.length; n++) { var orn = optionalRest(C, ev, beam[n]); orn.t = ev.tick; children.push(orn); }
         }
         var best = {};
         for (j = 0; j < children.length; j++) {
@@ -1255,6 +1431,7 @@ function search(C, events) {
     for (n = 0; n < beam.length; n++) {
         var nd = beam[n], sc = nd.score;
         if (nd.pend) sc -= 100;
+        if (nd.c && nd.segStart >= 0) sc -= outlinePenalty(C, nd.segLen, Math.abs(nd.c.midi - nd.segStart));
         if (C.apex && !nd.apexHit && total > 8) sc -= 60;     // la linea non ha toccato il culmine previsto
         if (nd.maxIdx >= 0 && total > 4) {
             var rel = nd.maxIdx / total;
@@ -1276,7 +1453,8 @@ function buildItems(C, events, path) {
     var runs = [], i;
     for (i = 0; i < events.length; i++) {
         var ev = events[i], c = path[i], last = runs[runs.length - 1];
-        if (last && last.end === ev.tick &&
+        var brk = ev.lock || (i > 0 && events[i - 1].lock);    // le note fissate restano note a sé
+        if (last && last.end === ev.tick && !brk &&
             ((c && last.c && last.c.midi === c.midi) || (!c && !last.c))) last.end += ev.dur;
         else runs.push({ t: ev.tick, end: ev.tick + ev.dur, c: c });
     }
@@ -1294,6 +1472,16 @@ function buildItems(C, events, path) {
                          tpc: r.c ? r.c.tpc : null, tieNext: !!r.c && k < pieces.length - 1 });
     }
     return items;
+}
+// item del generatore -> eventi { tick, dur, notes } (le note legate proseguono la precedente)
+function itemsToLine(items) {
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (it.midi === null) continue;
+        out.push({ tick: it.tick, dur: it.ticks, notes: [{ midi: it.midi, tpc: it.tpc, tieBack: i > 0 && items[i - 1].tieNext }] });
+    }
+    return out;
 }
 function decompose(t, e, m, out) {
     while (t < e) {
@@ -1348,6 +1536,217 @@ function verify(C, events, path) {
     return rep;
 }
 
+
+// ---------------------------------------------------------------- analisi di una voce esistente
+// Controlla una voce scritta (dall'utente o dal plugin) rispetto a melodia e basso
+// con le stesse regole del motore, e ritorna l'elenco dei rilievi.
+//   input: come generate() più  line: [{ tick, dur, notes }]  (la voce da analizzare)
+//   output: { findings: [{ tick, rule, level: "error"|"warning", text }], report: {...} }
+var RULE_TEXT = {
+    parallel5: "quinte parallele", parallel8: "ottave parallele", hidden: "quinta o ottava diretta (con salto nella voce superiore)",
+    accented: "dissonanza in tempo forte non preparata", dissonance: "dissonanza non raggiunta o non lasciata per grado",
+    suspension: "ritardo che non scende di grado", seventh: "settima dell'accordo che non scende",
+    leap: "salto non ammesso", sixth: "salto di sesta (nel rigoroso solo la sesta minore ascendente)", leapRecovery: "salto ampio non recuperato per moto contrario",
+    outline: "tritono delineato", outline7: "settima delineata", crossing: "incrocio delle voci",
+    ltDoubled: "sensibile raddoppiata", ltResolution: "sensibile che non sale alla tonica",
+    crossRelation: "falsa relazione", climax: "culmine ripetuto", final: "finale fuori dall'accordo di tonica"
+};
+function analyze(input) {
+    var opt = {}, k;
+    for (k in DEFAULTS) opt[k] = DEFAULTS[k];
+    if (input.options) for (k in input.options) if (input.options[k] !== undefined) opt[k] = input.options[k];
+    var C = { opt: opt, start: input.start, end: input.end, rng: makeRng(1), notes: [], locked: [] };
+    C.strict = opt.strictness !== "free";
+    C.ms = prepMeasures(input.measures, opt.meter);
+    if (!C.ms.length) throw "Nessuna misura nell'intervallo.";
+    C.melLine = buildLine(input.melody || [], C.start, C.end, true);
+    C.bassLine = buildLine(input.bass || [], C.start, C.end, false);
+    if (!C.melLine.some(function (x) { return x.note; })) throw "La melodia non contiene note nell'intervallo scelto.";
+    C.hasBass = C.bassLine.some(function (x) { return x.note; });
+    var cp = buildLine(input.line || [], C.start, C.end, true);
+    if (!cp.some(function (x) { return x.note; })) throw "La voce da analizzare non contiene note nell'intervallo scelto.";
+    detectKeys(C, input.keys || []);
+    analyseHarmony(C);
+    findCadences(C);
+    var mm = weightedMedian(C.melLine), cm = weightedMedian(cp);
+    var role0 = cm >= mm ? "above" : (C.hasBass ? "middle" : "below");
+    // ruolo della voce: dato dal generatore (anche battuta per battuta, con lo scambio delle parti) o dedotto
+    var roles = (input.roles || []).slice().sort(function (a, b) { return a.t - b.t; });
+    function roleAt(t) { var q = bsearch(roles, t); return q >= 0 ? roles[q].role : role0; }
+
+    // note del contrappunto (attacchi), con i legami a precedente e successiva senza pause
+    var notes = [], i;
+    for (i = 0; i < cp.length; i++) {
+        var sg = cp[i];
+        if (!sg.note) continue;
+        var last = notes[notes.length - 1];
+        if (!sg.attack && last && last.end === sg.t && last.note.midi === sg.note.midi) { last.end = sg.end; continue; }
+        notes.push({ t: sg.t, end: sg.end, note: sg.note });
+    }
+    for (i = 0; i < notes.length; i++) {
+        notes[i].prev = (i > 0 && notes[i - 1].end === notes[i].t) ? notes[i - 1] : null;
+        notes[i].next = (i + 1 < notes.length && notes[i + 1].t === notes[i].end) ? notes[i + 1] : null;
+    }
+    function noteOf(t) { for (var q = 0; q < notes.length; q++) if (notes[q].t <= t && t < notes[q].end) return notes[q]; return null; }
+
+    var findings = [], seen = {};
+    var rep = { key: C.keyName, role: roles.length ? roles[0].role : role0, notes: notes.length, steps: 0, leaps: 0, contrary: 0, similar: 0, errors: 0, warnings: 0,
+                figures: { passing: 0, neighbor: 0, cambiata: 0, double: 0, suspension: 0, appoggiatura: 0 } };
+    function add(t, rule, level, extra) {
+        var id = t + ":" + rule;
+        if (seen[id]) return;
+        seen[id] = 1;
+        findings.push({ tick: t, rule: rule, level: level, text: RULE_TEXT[rule] + (extra ? " (" + extra + ")" : "") });
+        if (level === "error") rep.errors++; else rep.warnings++;
+    }
+    function others(t) {
+        var mel = noteAt(C.melLine, t), bass = noteAt(C.bassLine, t);
+        if (opt.sameStaff && mel && bass && mel.midi === bass.midi) bass = null;
+        return { mel: mel, bass: bass };
+    }
+    // dissonanza del contrappunto c nell'istante t: null, "diss" o "chord" (settima o tritono dell'accordo)
+    function dissAt(c, t) {
+        var o = others(t), ch = chordAt(C, t), dB = false, dM = false, cb = -1, role = roleAt(t);
+        if (o.bass) { cb = mod(c.midi - o.bass.midi, 12); dB = !!DISS_LOW[cb]; }
+        if (o.mel) {
+            var im = role === "above" ? c.midi - o.mel.midi : o.mel.midi - c.midi, cm2 = mod(im, 12);
+            var melLowest = role === "above" && !o.bass;
+            var tab = (role === "below" || melLowest) ? DISS_LOW : DISS_UP;
+            var triOK = cm2 === 6 && ch && ch.set[c.pc] && ch.set[o.mel.pc] && !melLowest;
+            // se è la melodia a uscire dall'accordo (sua nota di passaggio o appoggiatura) l'urto non è del contrappunto
+            var melCT = ch ? !!ch.set[o.mel.pc] : true;
+            if ((tab[cm2] || (cm2 === 6 && !triOK)) && melCT) dM = true;
+        }
+        if (!dB && !dM) return null;
+        var ct = !!(ch && ch.set[c.pc]), sev = ct && ch.seventh !== null && c.pc === ch.seventh;
+        if (ct && !C.strict) {
+            if (dB && (cb === 6 || sev)) { dB = false; sev = true; }
+            if (dM) { dM = false; if (c.pc === ch.seventh) sev = true; }
+        } else if (ct && sev) {
+            if (dB && (cb === 10 || cb === 11 || cb === 1 || cb === 2 || cb === 6)) dB = false;
+            dM = false;
+        }
+        if (dB || dM) return "diss";
+        return sev ? "chord" : null;
+    }
+    function strongAt(t) {
+        var m = measureAt(C.ms, t), st = strengthAt(m, t);
+        if (st >= 3) return true;
+        if (st < 2) return false;
+        var ms = segAt(C.melLine, t), bs = segAt(C.bassLine, t);
+        return !!((ms && ms.t === t && ms.attackAny) || (bs && bs.t === t && bs.attackAny));
+    }
+
+    // 1. ogni attacco del contrappunto: moto, salti, dissonanze, incroci
+    var segStart = -1, segLen = 0, runDir = 0, maxM = -1;
+    for (i = 0; i < notes.length; i++) {
+        var n = notes[i], c = n.note, t = n.t, o = others(t), p = n.prev ? n.prev.note : null, role = roleAt(t);
+        var ch = chordAt(C, t), key = keyAt(C, t);
+        if (c.midi > maxM) maxM = c.midi;
+        // incroci
+        if (o.mel && ((role === "above" && c.midi < o.mel.midi) || (role !== "above" && c.midi > o.mel.midi))) add(t, "crossing", "error", "con la melodia");
+        if (o.bass && role !== "below" && c.midi < o.bass.midi) add(t, "crossing", "error", "con il basso");
+        // sensibile raddoppiata
+        if (ch && ch.dominant && c.pc === key.ltPc && ((o.mel && o.mel.pc === c.pc) || (o.bass && o.bass.pc === c.pc))) add(t, "ltDoubled", "warning");
+        // falsa relazione
+        var mp = noteAt(C.melLine, t - 1), bp = noteAt(C.bassLine, t - 1);
+        [o.mel, o.bass, t > C.start ? mp : null, t > C.start ? bp : null].forEach(function (x) {
+            if (x && x.letter === c.letter && x.pc !== c.pc) add(t, "crossRelation", "warning", tpcName(x.tpc) + " contro " + tpcName(c.tpc));
+        });
+        if (p) {
+            var d = c.dia - p.dia, ad = Math.abs(d), am = Math.abs(c.midi - p.midi), mv = c.midi - p.midi;
+            if (ad === 1) rep.steps++; else if (am) rep.leaps++;
+            // salti
+            var bad = (ad === 1 && am === 3) || (ad === 2 && am !== 3 && am !== 4) || (ad === 3 && am !== 5) ||
+                      (ad === 4 && am !== 7) || ad === 6 || (ad === 7 && am !== 12) || ad > 7 || (am === 6);
+            var lp = tpcName(p.tpc) + "–" + tpcName(c.tpc) + (ad > 7 ? ", oltre l'ottava" : "");
+            if (bad) add(t, "leap", "error", lp);
+            else if (ad === 5 && C.strict && mv !== 8) add(t, "sixth", "warning", lp);
+            if (n.prev.prev) {
+                var pp = n.prev.prev.note, L = p.dia - pp.dia;
+                if (Math.abs(L) >= 3 && (sign(d) === sign(L) || ad >= 3) && !(ad === 2 && Math.abs(L) === 2)) add(t, "leapRecovery", "warning");
+            }
+            // tratti nella stessa direzione
+            var dir = sign(mv);
+            if (dir !== 0) {
+                if (segStart < 0 || runDir === 0) { segStart = p.midi; segLen = 1; }
+                else if (dir === runDir) segLen++;
+                else {
+                    var span = Math.abs(p.midi - segStart);
+                    if (segLen >= 2 && span === 6) add(n.prev.t, "outline", "warning");
+                    if (segLen >= 2 && (span === 10 || span === 11)) add(n.prev.t, "outline7", "warning");
+                    segStart = p.midi; segLen = 1;
+                }
+                runDir = dir;
+            }
+            // sensibile
+            if (p.pc === keyAt(C, n.prev.t).ltPc && ch && ch.deg === 0 && d !== 1 && n.prev.t >= C.start) {
+                var pch = chordAt(C, n.prev.t);
+                if (pch && pch.dominant && role !== "middle") add(t, "ltResolution", "warning");
+            }
+            // moto rispetto a melodia e basso: parallele e dirette
+            [["mel", "melodia"], ["bass", "basso"]].forEach(function (v) {
+                var a1 = o[v[0]], a0 = v[0] === "mel" ? mp : bp;
+                if (!a0 || !a1 || a0.midi === a1.midi || p.midi === c.midi) return;
+                if (opt.sameStaff && v[0] === "bass" && o.mel && a1.midi === o.mel.midi) return;
+                var r0 = Math.abs(p.midi - a0.midi) % 12, r1 = Math.abs(c.midi - a1.midi) % 12;
+                var dirO = sign(a1.midi - a0.midi);
+                if (dirO === dir) rep.similar++; else rep.contrary++;
+                if (r0 === r1 && (r1 === 0 || r1 === 7)) add(t, r1 === 7 ? "parallel5" : "parallel8", "error", "con " + v[1]);
+                else if (C.strict && dirO === dir && (r1 === 0 || r1 === 7)) {
+                    var outer = v[0] === "bass" ? role === "above" : (!C.hasBass && role !== "middle");
+                    var upperLeap = role === "above" ? am > 2 : Math.abs(a1.midi - a0.midi) > 2;
+                    if (outer && upperLeap) add(t, "hidden", "warning", "con " + v[1]);
+                }
+            });
+        }
+        // dissonanza all'attacco
+        var ds = dissAt(c, t);
+        if (ds) {
+            var nx = n.next ? n.next.note : null;
+            var inD = p ? c.dia - p.dia : null, outD = nx ? nx.dia - c.dia : null;
+            if (ds === "chord") { if (nx && outD !== -1 && outD !== 0) add(t, "seventh", "warning"); }
+            else if (strongAt(t)) {
+                if (outD !== null && Math.abs(outD) === 1 && !C.strict) rep.figures.appoggiatura++;
+                else add(t, "accented", C.strict ? "error" : "warning");
+            } else if (inD !== null && Math.abs(inD) === 1 && outD !== null && Math.abs(outD) === 1) {
+                if (sign(inD) === sign(outD)) rep.figures.passing++; else rep.figures.neighbor++;
+            } else if (inD !== null && Math.abs(inD) === 1 && outD !== null && Math.abs(outD) === 2 && n.next.next &&
+                       n.next.next.t === n.next.end && Math.abs(n.next.next.note.dia - nx.dia) === 1 &&
+                       sign(n.next.next.note.dia - nx.dia) === -sign(outD)) {
+                if (sign(outD) === sign(inD)) rep.figures.cambiata++; else rep.figures.double++;
+            } else if (inD !== null && Math.abs(inD) === 2 && outD !== null && Math.abs(outD) === 1 && sign(outD) === -sign(inD) &&
+                       n.prev.prev && n.prev.prev.end === n.prev.t && n.prev.prev.note.dia === nx.dia &&
+                       Math.abs(p.dia - n.prev.prev.note.dia) === 1 && !strongAt(t)) {
+                // seconda vicina della doppia volta (X – vicina sopra – vicina sotto – X)
+            } else add(t, "dissonance", "error");
+        }
+    }
+    // 2. note tenute mentre le altre voci si muovono: ritardi
+    var pts = {};
+    [C.melLine, C.bassLine].forEach(function (line) { for (var q = 0; q < line.length; q++) if (line[q].attackAny) pts[line[q].t] = 1; });
+    Object.keys(pts).map(Number).sort(function (a, b) { return a - b; }).forEach(function (t) {
+        var n = noteOf(t);
+        if (!n || n.t === t) return;
+        var ds = dissAt(n.note, t);
+        if (!ds) return;
+        var nx = n.next ? n.next.note : null, outD = nx ? nx.dia - n.note.dia : null;
+        if (ds === "chord") { if (nx && outD !== -1 && outD !== 0) add(n.end, "seventh", "warning"); return; }
+        if (dissAt(n.note, n.t)) return;                  // già dissonante all'attacco: rilevato sopra
+        // su un tempo debole è l'altra voce a passare (sua nota di passaggio o di volta)
+        if (!strongAt(t)) return;
+        if (outD === -1) { if (!seen["sus" + n.t]) { seen["sus" + n.t] = 1; rep.figures.suspension++; } }
+        else if (nx || n.end < C.end) add(t, "suspension", "error");
+    });
+    // 3. culmine e finale
+    var tops = notes.filter(function (x) { return x.note.midi === maxM; });
+    for (i = 1; i < tops.length; i++) add(tops[i].t, "climax", "warning", (i + 1) + "ª volta");
+    var lastN = notes[notes.length - 1], fch = chordAt(C, lastN.t), fk = keyAt(C, lastN.t);
+    if (fch && (!fch.set[lastN.note.pc] || (fch.root !== fk.tonicPc && fch.deg !== 0))) add(lastN.t, "final", "warning");
+    findings.sort(function (a, b) { return a.tick - b.tick || (a.level === "error" ? -1 : 1); });
+    return { findings: findings, report: rep };
+}
+
 // esportazioni per il collaudo in node
-var Engine = { generate: generate, makeKey: makeKey, tpcName: tpcName, DEFAULTS: DEFAULTS };
+var Engine = { generate: generate, analyze: analyze, makeKey: makeKey, tpcName: tpcName, DEFAULTS: DEFAULTS };
 if (typeof module !== "undefined") module.exports = Engine;

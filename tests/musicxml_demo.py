@@ -182,7 +182,7 @@ def main():
             res = json.loads(out.stdout)
             if not any(r["report"]["signature"] == res["report"]["signature"] for _, r in results):
                 results.append((seed + v, res))
-        results.sort(key=lambda x: (x[1]["report"]["parallels"], -x[1]["report"]["quality"], x[0]))
+        results.sort(key=lambda x: (x[1]["report"]["parallels"], x[1]["report"].get("errors", 0), -x[1]["report"]["quality"], x[0]))
         for rank, (sd, res) in enumerate(results, 1):
             items, rep = res["items"], res["report"]
             for a, b in zip(items, items[1:]):
@@ -192,10 +192,12 @@ def main():
             npart += 1
             name = "Contrappunto (%s)" % LABEL.get(sp, sp) + ((" %d – seme %d" % (rank, sd)) if nvar > 1 else "")
             add_part(root, "PCP%d" % npart, name, items, measures, keys, clef)
-            print("%-7s seme %-5d qualità %6.2f  tonalità %s, ruolo %s, %d note, passi/salti %d/%d, contrario/simile %d/%d, parallele %d, culmini %d, %d ms"
+            print("%-7s seme %-5d qualità %6.2f  tonalità %s, ruolo %s, %d note, passi/salti %d/%d, contrario/simile %d/%d, parallele %d, culmini %d, errori/avvisi %d/%d, %d ms"
                   % (sp, sd, rep["quality"], rep["key"], rep["role"], rep["notes"], rep["steps"], rep["leaps"], rep["contrary"],
-                     rep["similar"], rep["parallels"], rep["climaxCount"], rep["ms"]))
+                     rep["similar"], rep["parallels"], rep["climaxCount"], rep.get("errors", 0), rep.get("warnings", 0), rep["ms"]))
             for d in rep["details"]: print("   !", d)
+            for f in rep.get("findings", []):
+                if f["level"] == "error": print("   x tick %d: %s" % (f["tick"], f["text"]))
     data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("META-INF/container.xml", '<?xml version="1.0" encoding="UTF-8"?><container><rootfiles>'
