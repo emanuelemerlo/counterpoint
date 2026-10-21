@@ -7,8 +7,9 @@ del pianoforte).
 
 ## Installazione
 
-1. Copia la cartella `plugin/Contrappunto` in `Documenti/MuseScore4/Plugins/`
-   (oppure scarica lo zip dalla pagina delle release ed estrailo lì).
+1. Scarica lo zip dalla pagina delle release ed estrai la cartella
+   `contrappunto` in `Documenti/MuseScore4/Plugins/` (oppure copia lì la
+   cartella `plugin/Contrappunto` del repository, rinominandola `contrappunto`).
 2. In MuseScore: **Plugin → Gestisci plugin**, attiva *Contrappunto automatico*.
 3. Il plugin compare nel menu **Plugin → Composizione/arrangiamento**.
 4. Dopo un aggiornamento **riavvia MuseScore**: finché resta aperto usa la
@@ -141,7 +142,7 @@ gli *artifacts* dell'esecuzione. Per pubblicare una versione:
 3. crea e invia il tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
    (oppure *Actions → Release → Run workflow* indicando la versione).
 
-La release contiene `Contrappunto-X.Y.Z.zip` (cartella `Contrappunto/` con i
+La release contiene `Contrappunto-X.Y.Z.zip` (cartella `contrappunto/`, in minuscolo, con i
 due file del plugin e `README.TXT`) e `README.TXT` a parte, con note di
 rilascio, funzionalità, installazione e istruzioni d'uso. Il testo fisso del
 README.TXT è in `release/README_TEMPLATE.txt`; per provarlo in locale:

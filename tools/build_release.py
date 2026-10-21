@@ -5,7 +5,7 @@ Prepara i file di una release del plugin.
   python3 tools/build_release.py [--expect-version X.Y.Z] [--out dist]
 
 Crea in dist/:
-  Contrappunto-X.Y.Z.zip   cartella Contrappunto/ con i file del plugin e README.TXT
+  Contrappunto-X.Y.Z.zip   cartella contrappunto/ (minuscolo) con i file del plugin e README.TXT
   README.TXT               lo stesso README.TXT, da allegare anche a parte
   release-notes.md         note della versione (corpo della release su GitHub)
 
@@ -18,6 +18,8 @@ import argparse, datetime, os, re, sys, textwrap, zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLUGIN_DIR = os.path.join(ROOT, "plugin", "Contrappunto")
 PLUGIN_FILES = ["contrappunto.qml", "contrappunto_engine.js"]
+# Nella release la cartella del plugin è in minuscolo (nel repository resta plugin/Contrappunto).
+RELEASE_DIR = "contrappunto"
 REPO_URL = "https://github.com/emanuelemerlo/counterpoint"
 WIDTH = 78
 
@@ -112,14 +114,16 @@ def main():
     zip_path = os.path.join(args.out, "Contrappunto-%s.zip" % version)
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         for f in PLUGIN_FILES:
-            z.write(os.path.join(PLUGIN_DIR, f), "Contrappunto/" + f)
-        z.writestr("Contrappunto/README.TXT", readme_bytes)
+            z.write(os.path.join(PLUGIN_DIR, f), RELEASE_DIR + "/" + f)
+        z.writestr(RELEASE_DIR + "/README.TXT", readme_bytes)
     with open(os.path.join(args.out, "README.TXT"), "wb") as f:
         f.write(readme_bytes)
     with open(os.path.join(args.out, "release-notes.md"), "w", encoding="utf-8") as f:
         f.write(notes + "\n\n---\n**Installazione:** scarica `Contrappunto-%s.zip`, estrai la cartella "
-                "`Contrappunto` in `Documenti/MuseScore4/Plugins/` e attiva il plugin da "
-                "*Plugin → Gestisci plugin*. Istruzioni complete in `README.TXT`.\n" % version)
+                "`contrappunto` in `Documenti/MuseScore4/Plugins/` e attiva il plugin da "
+                "*Plugin → Gestisci plugin*. Se aggiorni, elimina prima la vecchia cartella "
+                "(anche se si chiama `Contrappunto` con la maiuscola). "
+                "Istruzioni complete in `README.TXT`.\n" % version)
 
     print("versione", version)
     print("scritti:", zip_path, "README.TXT", "release-notes.md")

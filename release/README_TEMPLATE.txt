@@ -52,14 +52,16 @@ voce di un rigo esistente.
  INSTALLAZIONE
 ------------------------------------------------------------------------------
 
- 1. Estrai lo zip: contiene la cartella "Contrappunto".
- 2. Copia la cartella "Contrappunto" nella cartella dei plugin di MuseScore:
+ 1. Estrai lo zip: contiene la cartella "contrappunto" (in minuscolo).
+ 2. Copia la cartella "contrappunto" nella cartella dei plugin di MuseScore:
       Windows : Documenti\MuseScore4\Plugins\
       macOS   : ~/Documents/MuseScore4/Plugins/
       Linux   : ~/Documents/MuseScore4/Plugins/
     (la cartella è indicata anche in Preferenze > Cartelle > Plugin).
-    Se aggiorni da una versione precedente, sostituisci la vecchia cartella
-    e RIAVVIA MuseScore: finché resta aperto continua a usare la versione
+    Se aggiorni da una versione precedente, elimina prima la vecchia
+    cartella, anche se si chiama "Contrappunto" con la maiuscola (su Linux
+    resterebbero due cartelle e il plugin comparirebbe due volte), poi
+    RIAVVIA MuseScore: finché resta aperto continua a usare la versione
     caricata all'avvio. Il numero di versione in uso compare accanto al
     titolo della finestra del plugin.
  3. In MuseScore: menu Plugin > Gestisci plugin, attiva
