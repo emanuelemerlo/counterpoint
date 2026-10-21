@@ -14,7 +14,7 @@ MuseScore {
     id: plugin
     title: "Contrappunto automatico"
     description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità."
-    version: "2.1.0"
+    version: "2.1.1"
     categoryCode: "composing-arranging-tools"
     pluginType: "dialog"
     requiresScore: true
@@ -243,8 +243,47 @@ MuseScore {
 
     function gcd(a, b) { while (b) { var t = b; b = a % b; a = t; } return a; }
 
+    // Accordi di una voce dentro l'intervallo, nell'ordine in cui li incontra il cursore
+    function chordsIn(staffIdx, voice) {
+        var out = [];
+        var c = curScore.newCursor();
+        c.staffIdx = staffIdx;
+        c.voice = voice;
+        c.rewind(Cursor.SCORE_START);
+        while (c.segment && c.tick < rangeEnd) {
+            var el = c.element;
+            if (el && el.type === Element.CHORD && c.tick >= rangeStart) out.push({ tick: c.tick, el: el });
+            c.next();
+        }
+        return out;
+    }
+
+    // Toglie le note già presenti nella voce di destinazione: in MuseScore 4 la
+    // sovrascrittura del cursore non sempre elimina le note della variante
+    // precedente, che restano udibili sotto la nuova.
+    function clearTrack(staffIdx, voice) {
+        var chords = chordsIn(staffIdx, voice);
+        for (var i = chords.length - 1; i >= 0; i--) {
+            try { removeElement(chords[i].el); } catch (e) { console.log("Contrappunto: rimozione non riuscita: " + e); }
+        }
+        return chords.length;
+    }
+
+    // Rilegge la voce scritta e la confronta con la variante: ritorna il numero di differenze
+    function verifyTrack(items, staffIdx, voice) {
+        var want = [], i;
+        for (i = 0; i < items.length; i++) if (items[i].midi !== null) want.push(items[i]);
+        var got = chordsIn(staffIdx, voice), diff = Math.abs(got.length - want.length);
+        for (i = 0; i < Math.min(got.length, want.length); i++) {
+            var notes = got[i].el.notes;
+            if (got[i].tick !== want[i].tick || notes.length !== 1 || notes[0].pitch !== want[i].midi) diff++;
+        }
+        return diff;
+    }
+
     // Scrive gli item in sequenza a partire da rangeStart; ritorna le note da legare
     function writeItems(items, staffIdx, voice) {
+        clearTrack(staffIdx, voice);
         var c = curScore.newCursor();
         c.staffIdx = staffIdx;
         c.voice = 0;
@@ -477,6 +516,9 @@ MuseScore {
             return;
         }
         var nTies = addTies(ties);
+        var mismatch = 0;
+        for (i = 0; i < list.length; i++)
+            if (list[i].staff !== undefined) mismatch += verifyTrack(list[i].res.items, list[i].staff, list[i].voice);
 
         separateStaves = j.separate;
         candidates = list;
@@ -507,9 +549,15 @@ MuseScore {
         if (dup > 0) msg += "\n" + dup + (dup === 1 ? " variante era identica" : " varianti erano identiche") +
                             " a un'altra: alza la Varietà per risultati più diversi.";
         if (ties.length && !nTies && tiesCheck.checked) msg += "\nNon è stato possibile creare le legature di valore.";
-        setStatus(msg, list[0].res.report.parallels > 0 ? "error" : "info");
+        if (mismatch) msg = mismatchText(mismatch) + "\n" + msg;
+        setStatus(msg, (mismatch || list[0].res.report.parallels > 0) ? "error" : "info");
         busy = false;
         generationFinished();
+    }
+
+    function mismatchText(n) {
+        return "Attenzione: il rigo non corrisponde esattamente alla variante (" + n + (n === 1 ? " differenza" : " differenze") +
+               "). Annulla con Ctrl+Z e segnala il problema.";
     }
 
     // Clic su una variante dell'elenco: la scrive al posto di quella attuale
@@ -533,11 +581,13 @@ MuseScore {
             return;
         }
         addTies(ties);
+        var mismatch = verifyTrack(c.res.items, target.staff, target.voice);
         c.staff = target.staff; c.voice = target.voice;
         chosen = i;
         seedSpin.value = c.seed;
-        setStatus("Variante " + (i + 1) + " scritta (il suo seme è ora nel campo Seme).\n" + describe(c, target.staff, target.voice),
-                  c.res.report.parallels ? "error" : "info");
+        setStatus((mismatch ? mismatchText(mismatch) + "\n" : "") +
+                  "Variante " + (i + 1) + " scritta (il suo seme è ora nel campo Seme).\n" + describe(c, target.staff, target.voice),
+                  (mismatch || c.res.report.parallels) ? "error" : "info");
     }
 
     // ------------------------------------------------------------------ interfaccia

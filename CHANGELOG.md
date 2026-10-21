@@ -4,6 +4,15 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.1.1
+
+### Correzioni
+- Scegliendo un'altra variante, o rigenerando sullo stesso rigo, le note della
+  variante precedente restavano nel rigo: invisibili ma udibili, sovrapposte
+  alla nuova. Ora la voce di destinazione viene svuotata prima di scrivere.
+- Dopo ogni scrittura il plugin rilegge il rigo e avvisa se non corrisponde
+  esattamente alla variante scelta.
+
 ## 2.1.0
 
 ### Novità

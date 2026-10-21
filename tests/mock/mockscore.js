@@ -67,6 +67,12 @@ function makeScore(spec) {
         selected.forEach(function (n) { n.tieFor = { mock: true }; n._tied = true; });
         S.log.push("tie x" + selected.length);
     };
+    S._remove = function (x) {
+        for (var k = 0; k < S.tracks.length; k++) {
+            var i = S.tracks[k].indexOf(x);
+            if (i >= 0) { S.tracks[k].splice(i, 1, el(x.tick, x.dur, REST, [])); return; }
+        }
+    };
     S.newCursor = function () { return makeCursor(S); };
     return S;
 }
@@ -95,6 +101,8 @@ function makeCursor(S) {
         for (var i = t.length - 1; i >= 0; i--) {
             var e = t[i];
             if (e.tick < b && e.tick + e.dur > a) {
+                // come MuseScore 4 in alcuni casi: la sovrascrittura lascia l'accordo precedente
+                if (S.leakyOverwrite && e.type === CHORD) continue;
                 if (e.tick < a) { e.dur = a - e.tick; continue; }              // tronca
                 if (e.tick + e.dur > b) { t.splice(i, 1, el(b, e.tick + e.dur - b, REST, [])); continue; }
                 t.splice(i, 1);
