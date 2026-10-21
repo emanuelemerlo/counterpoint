@@ -82,7 +82,8 @@ evitare di chiudersi in un vicolo cieco. Il motore nuovo:
 - **Linea melodica**: preferenza per i gradi congiunti; salti ampi recuperati
   per moto contrario; vietati seconda eccedente, tritono, settime e salti oltre
   l'ottava; sensibile che sale alla tonica; scala minore melodica (6° e 7° grado
-  alzati in salita); un solo culmine possibilmente tra il 35% e l'85% del brano;
+  alzati in salita); un solo culmine, pianificato in una frase intorno al 60%
+  del brano (la zona più acuta del registro è riservata a quella frase);
   freno alle ripetizioni di figure battuta dopo battuta.
 - **Frasi e cadenze**: individua gli arrivi di frase (note lunghe su tempo forte,
   note seguite da pause) e richiede lì note dell'accordo raggiunte per grado; il
@@ -116,8 +117,8 @@ aprire e ascoltare in MuseScore.
 - Una sola voce di contrappunto per volta.
 - Le terzine e gli altri gruppi irregolari della melodia vengono letti, ma il
   contrappunto usa solo valori binari e puntati.
-- Il punto culminante unico è garantito bene su brani brevi; su brani lunghi il
-  motore tende a un culmine per sezione.
+- Nella specie 1:1, dove il ritmo non lascia alternative, il culmine può essere
+  toccato due o tre volte, sempre nella frase centrale.
 - Nei passaggi in cui melodia e accompagnamento sono molto vicini (per esempio
   un arpeggio condiviso tra le mani) il contrappunto può fare brevi pause per
   evitare quinte od ottave parallele.

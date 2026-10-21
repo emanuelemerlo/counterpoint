@@ -29,8 +29,8 @@ voce di un rigo esistente.
    di passaggio o di volta, ritardi preparati o settime di dominante; niente
    incroci; sensibile non raddoppiata.
  * Linea melodica: prevalenza di gradi congiunti, salti recuperati per moto
-   contrario, un solo culmine, preferenza per il moto contrario, cadenze
-   raggiunte per grado.
+   contrario, un solo culmine (nella frase intorno al 60% del brano),
+   preferenza per il moto contrario, cadenze raggiunte per grado.
  * Estensione dello strumento: le note restano sempre dentro l'estensione
    dello strumento di destinazione; se serve la voce cambia posizione
    (sopra/sotto la melodia) o ottava, ricalcolando la linea.
@@ -140,7 +140,8 @@ Consigli
  * Una sola voce di contrappunto per volta.
  * Terzine e gruppi irregolari della melodia vengono letti, ma il
    contrappunto usa solo valori binari e puntati.
- * Su brani lunghi il motore tende a un culmine per sezione.
+ * Nella specie 1:1 il culmine può essere toccato due o tre volte, sempre
+   nella frase centrale del brano.
  * Dove melodia e accompagnamento sono molto vicini il contrappunto può
    fare brevi pause per evitare quinte od ottave parallele.
 

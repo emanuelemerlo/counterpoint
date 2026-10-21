@@ -14,7 +14,7 @@ MuseScore {
     id: plugin
     title: "Contrappunto automatico"
     description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità."
-    version: "2.2.1"
+    version: "2.3.0"
     categoryCode: "composing-arranging-tools"
     pluginType: "dialog"
     requiresScore: true
@@ -373,8 +373,9 @@ MuseScore {
         var c = candidates[i];
         if (!c) return "";
         var r = c.res.report;
-        return "congiunti " + pct(r.steps, r.leaps) + "  ·  moto contrario " + pct(r.contrary, r.similar) +
-               "  ·  culmini " + r.climaxCount + "  ·  " + (r.parallels ? (r.parallels + " parallele!") : "nessuna parallela");
+        return "congiunti " + pct(r.steps, r.leaps) + "  ·  contrario " + pct(r.contrary, r.similar) +
+               "  ·  " + (r.climaxCount === 1 ? "culmine" : ("culmini " + r.climaxCount)) +
+               (r.climaxAt >= 0 ? " al " + r.climaxAt + "%" : "") + "  ·  " + (r.parallels ? (r.parallels + " parallele!") : "senza parallele");
     }
     function describe(c, staff, voice) {
         var r = c.res.report;
@@ -389,7 +390,7 @@ MuseScore {
         var r = c.res.report, ins = c.ins;
         if (!ins) return "";
         var roles = { above: "sopra la melodia", middle: "come voce intermedia", below: "sotto la melodia" };
-        var txt = "\nEstensione " + ins.name + " (" + midiName(ins.lo) + "–" + midiName(ins.hi) + ") rispettata: note " +
+        var txt = "\nEstensione " + ins.name + " (" + midiName(ins.lo) + "–" + midiName(ins.hi) + ") rispettata, registro " +
                   midiName(r.range[0]) + "–" + midiName(r.range[1]) + ".";
         if (r.roleBefore !== r.role) txt += " Per stare nell'estensione la voce va " + roles[r.role] + ".";
         if (r.rangeShift) txt += " Registro spostato di " + Math.abs(r.rangeShift) + (Math.abs(r.rangeShift) === 1 ? " ottava " : " ottave ") +
@@ -478,6 +479,7 @@ MuseScore {
 
     // usato dal collaudo
     function setVariants(n, separate) { variantsSpin.value = n; separateCheck.checked = separate; }
+    function setVariantCount(n) { variantsSpin.value = n; return separateCheck.checked; }
     function setInstrument(id) {
         for (var k = 0; k < instruments.length; k++) if (instruments[k].id === id) instrumentCombo.currentIndex = k;
     }
@@ -590,7 +592,7 @@ MuseScore {
         var msg;
         if (j.separate) {
             msg = list.length + " varianti scritte in " + list.length + " righi nuovi (dal rigo " + (list[0].staff + 1) +
-                  "), in ordine di qualità. Ascoltale e tieni quella che preferisci.";
+                  "), in ordine di qualità. Ascoltale e tieni quella che preferisci." + rangeNote(list[0]);
         } else {
             msg = describe(list[0], tStaff, tVoice);
             if (list.length > 1) msg = "Scritta la migliore di " + list.length + " varianti. Clicca un'altra variante nell'elenco per sostituirla.\n" + msg;
@@ -765,6 +767,12 @@ MuseScore {
                                 Layout.columnSpan: 2
                                 SpinBox {
                                     id: variantsSpin; from: 1; to: 8; value: 1
+                                    // passando a più varianti si propone il confronto su righi separati
+                                    property int lastValue: 1
+                                    onValueChanged: {
+                                        if (value > 1 && lastValue <= 1) separateCheck.checked = true;
+                                        lastValue = value;
+                                    }
                                     ToolTip.visible: hovered; ToolTip.delay: 600
                                     ToolTip.text: "Calcola più varianti (semi consecutivi) e le ordina per qualità"
                                 }

@@ -44,6 +44,9 @@ Item {
         p.curScore = score;
         p.run();
         console.log("staffNames: " + JSON.stringify(p.staffNames) + "  range " + p.rangeStart + "-" + p.rangeEnd);
+        if (p.setVariantCount(3) !== true) fail("con Quante > 1 la casella «una variante per rigo» deve attivarsi");
+        p.setVariants(1, false);
+        console.log("casella automatica: ok");
         phase = 1;
         p.generate();                       // 1) una variante in un nuovo rigo
     }

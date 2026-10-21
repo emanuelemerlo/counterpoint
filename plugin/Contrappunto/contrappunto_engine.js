@@ -300,6 +300,7 @@ function generate(input) {
     chooseRange(C);
     analyseHarmony(C);
     findCadences(C);
+    planClimax(C);
     var events = planEvents(C);
     annotate(C, events);
     var path = search(C, events);
@@ -475,6 +476,23 @@ function addW(line, a, b, w, f) {
     }
 }
 function chordAt(C, t) { var i = bsearch(C.slots, t); return i >= 0 ? C.slots[i].chord : null; }
+
+// Culmine unico: la zona più acuta del registro è riservata a una frase
+// intorno al 60% del brano (tra due arrivi di frase). Altrove la linea può avere
+// picchi locali, ma più bassi; dentro la frase scelta tocca la vetta una volta.
+function planClimax(C) {
+    var len = C.end - C.start, goal = C.start + 0.6 * len;
+    var lo = C.start + 0.4 * len, hi = C.start + 0.85 * len;
+    var cads = C.cadences.filter(function (t) { return t > C.start && t < C.end; });
+    var t0 = lo, t1 = hi;
+    for (var i = 0; i < cads.length; i++) {
+        if (cads[i] <= goal) t0 = Math.max(lo, cads[i]);
+        else { t1 = Math.min(hi, cads[i] + 1); break; }
+    }
+    if (t1 - t0 < 0.12 * len) { t0 = Math.max(lo, goal - 0.08 * len); t1 = Math.min(hi, goal + 0.08 * len); }
+    // zona alta: l'ultimo tono sotto il limite del registro
+    C.apex = { t0: t0, t1: t1, top: C.hi - 2 };
+}
 
 function findCadences(C) {
     var line = C.melLine, atts = [], i;
@@ -974,6 +992,15 @@ function evalTransition(C, ev, node, c, st, relax) {
         if (b1 === c.midi) s -= (b2 === c.midi ? 9 : 3);
     }
 
+    // culmine pianificato (vedi planClimax)
+    var apexHit = node.apexHit;
+    if (C.apex && !hold && c.midi >= C.apex.top) {
+        var inWin = ev.tick >= C.apex.t0 && ev.tick < C.apex.t1;
+        if (!inWin) s -= 120 + 8 * (c.midi - C.apex.top);
+        else if (!node.apexHit) { s += 24; apexHit = true; }
+        else if (c.midi >= node.maxM) s -= 20;
+    }
+
     var nz = C.opt.variety * (C.rng() - 0.5) * 6;   // varietà: rumore controllato, escluso dalla qualità
     s += nz;
 
@@ -987,7 +1014,7 @@ function evalTransition(C, ev, node, c, st, relax) {
         lastD: hold ? node.lastD : d, run: hold ? node.run : run,
         hold: hold ? node.hold + 1 : 0,
         maxM: newMax, maxCnt: newCnt, maxIdx: newMaxIdx, minM: Math.min(node.minM, c.midi), span: 1,
-        pend: pend, cons: !diss, pm: pm,
+        pend: pend, cons: !diss, pm: pm, apexHit: apexHit,
         pp: hold ? node.pp : (p ? p.midi : -1), ppp: hold ? node.ppp : node.pp, ppC: hold ? node.ppC : p,
         ltActive: c.isLT && !!ev.chord && !!ev.chord.set[c.pc] && ev.chord.dominant
     };
@@ -1004,7 +1031,7 @@ function pitchAt(node, t) {           // altezza del contrappunto al tick t, ris
 function restNode(node) {
     return { c: null, prev: node, score: node.score - (node.pend ? 100 : 0), noise: node.noise, lastD: 0, run: 0, hold: 0,
              maxM: node.maxM, maxCnt: node.maxCnt, maxIdx: node.maxIdx, minM: node.minM, span: node.span,
-             pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false };
+             pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false, apexHit: node.apexHit };
 }
 
 function optionalRest(C, ev, node) {
@@ -1023,7 +1050,7 @@ function optionalRest(C, ev, node) {
 function search(C, events) {
     var B = C.opt.beam || 48;
     var root = { c: null, prev: null, score: 0, noise: 0, lastD: 0, run: 0, hold: 0, maxM: -1, maxCnt: 0, maxIdx: -1,
-                 minM: 999, pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false };
+                 minM: 999, pend: null, cons: true, pm: 0, pp: -1, ppp: -1, ltActive: false, apexHit: false };
     var beam = [root], i, j, n;
     for (i = 0; i < events.length; i++) {
         var ev = events[i];
@@ -1048,7 +1075,7 @@ function search(C, events) {
         var best = {};
         for (j = 0; j < children.length; j++) {
             var x = children[j], pc = x.prev.c;
-            var key = (x.c ? x.c.midi : "r") + "|" + (pc ? pc.midi : "r") + "|" + (x.pend || "") + "|" + (x.hold > 0 ? 1 : 0);
+            var key = (x.c ? x.c.midi : "r") + "|" + (pc ? pc.midi : "r") + "|" + (x.pend || "") + "|" + (x.hold > 0 ? 1 : 0) + (x.apexHit ? "|A" : "");
             if (!best[key] || best[key].score < x.score) best[key] = x;
         }
         beam = Object.keys(best).map(function (kk) { return best[kk]; });
@@ -1146,6 +1173,9 @@ function verify(C, events, path) {
         prevI = i;
     }
     for (i = 0; i < events.length; i++) if (path[i] && path[i].midi === maxM && (i === 0 || !path[i - 1] || path[i - 1].midi !== maxM)) rep.climaxCount++;
+    rep.climaxAt = -1;                    // posizione del primo culmine, in % del brano
+    for (i = 0; i < events.length; i++)
+        if (path[i] && path[i].midi === maxM) { rep.climaxAt = Math.round(100 * (events[i].tick - C.start) / (C.end - C.start)); break; }
     return rep;
 }
 

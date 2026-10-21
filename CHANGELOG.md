@@ -4,6 +4,24 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.3.0
+
+### Novità
+- Culmine unico anche nei brani lunghi: il motore riserva la zona più acuta
+  del registro a una frase intorno al 60% del brano. Le altre frasi hanno
+  picchi locali più bassi. Sul brano di prova (71 battute) si passa da 3–6
+  culmini, quasi sempre nel primo quarto, a uno solo al 55–60% nello stile
+  libero e nel 2:1.
+- Con «Quante» maggiore di 1 si attiva da sola l'opzione «Una variante per rigo
+  nuovo» (si può comunque disattivare).
+- L'elenco delle varianti mostra dove cade il culmine (in % del brano).
+- Anche con una variante per rigo la finestra indica l'estensione dello
+  strumento usata e l'eventuale cambio di ruolo della voce.
+
+### Nota
+- Il punteggio include ora la regola del culmine: i valori non sono
+  confrontabili con quelli delle versioni precedenti.
+
 ## 2.2.1
 
 ### Miglioramenti
