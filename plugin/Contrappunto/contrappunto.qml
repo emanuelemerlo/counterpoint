@@ -13,13 +13,13 @@ import "contrappunto_engine.js" as Engine
 MuseScore {
     id: plugin
     title: "Contrappunto automatico"
-    description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità."
-    version: "2.1.0"
+    description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità, analizzare una voce scritta a mano e rigenerare una variante mantenendo le note scelte."
+    version: "2.6.0"
     categoryCode: "composing-arranging-tools"
     pluginType: "dialog"
     requiresScore: true
-    width: 860
-    height: 640
+    width: 880
+    height: 690
 
     // ------------------------------------------------------------------ stato
     property var staffNames: []
@@ -34,7 +34,13 @@ MuseScore {
     property int chosen: -1             // variante scritta nella destinazione
     property var target: null           // { staff, voice } dove si scrive la variante scelta
     property bool separateStaves: false // ultima generazione: una variante per rigo
+    property var lockedNotes: []        // note mantenute nell'ultima rigenerazione parziale
+    property var measureTicks: []       // inizio di ogni battuta (per i numeri di battuta nei messaggi)
     signal generationFinished()
+
+    // colori dei rilievi dell'analisi (riconosciuti per toglierli a un'analisi successiva)
+    readonly property string markError: "#d00000"
+    readonly property string markWarning: "#e07000"
 
     readonly property var speciesValues: ["free", "1:1", "2:1", "4:1", "sus", "florid"]
     readonly property var speciesLabels: ["Libero (ritmo complementare)", "1:1 – nota contro nota", "2:1 – due note contro una",
@@ -44,12 +50,19 @@ MuseScore {
                                            "Sotto la melodia, sopra il basso (tenore)", "Sotto la melodia, come basso"]
     readonly property var registerValues: ["auto", "soprano", "alto", "tenor", "bass"]
     readonly property var registerLabels: ["Automatico", "Soprano (Do4–La5)", "Contralto (Fa3–Re5)", "Tenore (Do3–La4)", "Basso (Mi2–Re4)"]
+    // estensioni comode (suoni reali, MIDI): il contrappunto resta sempre dentro
     readonly property var instruments: [
-        { label: "Violino", id: "violin" }, { label: "Flauto", id: "flute" }, { label: "Oboe", id: "oboe" },
-        { label: "Viola", id: "viola" }, { label: "Violoncello", id: "violoncello" }, { label: "Fagotto", id: "bassoon" },
-        { label: "Voce – Soprano", id: "soprano" }, { label: "Voce – Contralto", id: "alto" },
-        { label: "Voce – Tenore", id: "tenor" }, { label: "Voce – Basso", id: "bass" },
-        { label: "Pianoforte", id: "piano" }
+        { label: "Violino", id: "violin", lo: 55, hi: 88 },        // Sol3–Mi6
+        { label: "Flauto", id: "flute", lo: 60, hi: 93 },          // Do4–La6
+        { label: "Oboe", id: "oboe", lo: 58, hi: 86 },             // Sib3–Re6
+        { label: "Viola", id: "viola", lo: 48, hi: 81 },           // Do3–La5
+        { label: "Violoncello", id: "violoncello", lo: 36, hi: 72 }, // Do2–Do5
+        { label: "Fagotto", id: "bassoon", lo: 34, hi: 70 },       // Sib1–Sib4
+        { label: "Voce – Soprano", id: "soprano", lo: 60, hi: 81 },
+        { label: "Voce – Contralto", id: "alto", lo: 53, hi: 74 },
+        { label: "Voce – Tenore", id: "tenor", lo: 48, hi: 69 },
+        { label: "Voce – Basso", id: "bass", lo: 40, hi: 62 },
+        { label: "Pianoforte", id: "piano", lo: 21, hi: 108 }
     ]
 
     // ------------------------------------------------------------------ tema
@@ -98,6 +111,56 @@ MuseScore {
 
     Component.onCompleted: applyTheme()
 
+    // ------------------------------------------------------------------ impostazioni salvate
+    // Settings viene creato a runtime: se il modulo manca (versioni diverse di Qt in
+    // MuseScore 4.x) il plugin funziona lo stesso, senza ricordare le scelte.
+    property bool persistSettings: true
+    property string settingsCategory: "Contrappunto"
+    property var store: null
+    function openStore() {
+        if (store !== null) return store;
+        var srcs = ['import QtQuick 2.15; import Qt.labs.settings 1.0; Settings { category: "' + settingsCategory + '" }',
+                    'import QtQuick; import QtCore; Settings { category: "' + settingsCategory + '" }'];
+        store = false;
+        for (var i = 0; i < srcs.length && !store; i++) {
+            try { store = Qt.createQmlObject(srcs[i], plugin, "contrappuntoSettings"); } catch (e) { store = false; }
+        }
+        return store;
+    }
+    function currentSettings() {
+        return { species: speciesCombo.currentIndex, position: positionCombo.currentIndex, register: registerCombo.currentIndex,
+                 strict: strictCombo.currentIndex, mode: modeCombo.currentIndex, meter: meterCombo.currentIndex,
+                 imitation: imitationCheck.checked, entry: entryCheck.checked, ties: tiesCheck.checked,
+                 variety: varietySlider.value, variants: variantsSpin.value, separate: separateCheck.checked,
+                 instrument: instrumentCombo.currentIndex, toNew: newStaffRadio.checked, voice: voiceCombo.currentIndex };
+    }
+    function saveSettings() {
+        if (!persistSettings) return false;
+        var st = openStore();
+        if (!st) return false;
+        try { st.setValue("options", JSON.stringify(currentSettings())); return true; } catch (e) { return false; }
+    }
+    function loadSettings() {
+        if (!persistSettings) return false;
+        var st = openStore();
+        if (!st) return false;
+        var o = null;
+        try { var raw = st.value("options", ""); if (raw) o = JSON.parse(raw); } catch (e) { o = null; }
+        if (!o) return false;
+        function idx(combo, v) { if (typeof v === "number" && v >= 0 && v < combo.count) combo.currentIndex = v; }
+        idx(speciesCombo, o.species); idx(positionCombo, o.position); idx(registerCombo, o.register);
+        idx(strictCombo, o.strict); idx(modeCombo, o.mode); idx(meterCombo, o.meter);
+        idx(instrumentCombo, o.instrument); idx(voiceCombo, o.voice);
+        if (typeof o.imitation === "boolean") imitationCheck.checked = o.imitation;
+        if (typeof o.entry === "boolean") entryCheck.checked = o.entry;
+        if (typeof o.ties === "boolean") tiesCheck.checked = o.ties;
+        if (typeof o.variety === "number") varietySlider.value = o.variety;
+        if (typeof o.variants === "number") variantsSpin.value = Math.max(1, Math.min(8, o.variants));
+        if (typeof o.separate === "boolean") separateCheck.checked = o.separate;
+        if (o.toNew === false) existingRadio.checked = true;
+        return true;
+    }
+
     onRun: {
         if (!curScore) { quit(); return; }
         applyTheme();
@@ -115,7 +178,9 @@ MuseScore {
         seedSpin.value = Math.floor(Math.random() * 9000) + 1;
         candidates = [];
         chosen = -1;
-        setStatus("Pronto. Imposta le opzioni e premi Genera.", "info");
+        lockedNotes = [];
+        var restored = loadSettings();
+        setStatus("Pronto. Imposta le opzioni e premi Genera." + (restored ? " (Impostazioni dell'ultima volta.)" : ""), "info");
     }
 
     // ------------------------------------------------------------------ utilità score
@@ -186,8 +251,16 @@ MuseScore {
         }
         rangeStart = ms[a].tick;
         rangeEnd = ms[b].tick + ms[b].len;
+        measureTicks = ms.map(function (x) { return x.tick; });
         rangeLabel = (sel && sel.isRange) ? ("Intervallo: battute " + (a + 1) + "–" + (b + 1) + ".")
                                           : ("Tutto lo spartito (battute 1–" + ms.length + ").");
+    }
+
+    // "batt. 12" (e il tempo, se non è il primo) per un tick dello spartito
+    function barText(tick) {
+        var ms = measureTicks, i = 0;
+        while (i + 1 < ms.length && ms[i + 1] <= tick) i++;
+        return "batt. " + (i + 1);
     }
 
     function elTicks(el) {
@@ -196,11 +269,12 @@ MuseScore {
         return 480;
     }
 
-    // Legge tutte le voci di un rigo (tranne excludeVoice) come eventi {tick, dur, notes}
-    function readStaff(staffIdx, excludeVoice) {
+    // Legge tutte le voci di un rigo (tranne excludeVoice), oppure solo onlyVoice, come eventi {tick, dur, notes}
+    function readStaff(staffIdx, excludeVoice, onlyVoice) {
         var out = [];
         for (var v = 0; v < 4; v++) {
             if (v === excludeVoice) continue;
+            if (onlyVoice !== undefined && onlyVoice >= 0 && v !== onlyVoice) continue;
             var c = curScore.newCursor();
             c.staffIdx = staffIdx;
             c.voice = v;
@@ -243,8 +317,47 @@ MuseScore {
 
     function gcd(a, b) { while (b) { var t = b; b = a % b; a = t; } return a; }
 
+    // Accordi di una voce dentro l'intervallo, nell'ordine in cui li incontra il cursore
+    function chordsIn(staffIdx, voice) {
+        var out = [];
+        var c = curScore.newCursor();
+        c.staffIdx = staffIdx;
+        c.voice = voice;
+        c.rewind(Cursor.SCORE_START);
+        while (c.segment && c.tick < rangeEnd) {
+            var el = c.element;
+            if (el && el.type === Element.CHORD && c.tick >= rangeStart) out.push({ tick: c.tick, el: el });
+            c.next();
+        }
+        return out;
+    }
+
+    // Toglie le note già presenti nella voce di destinazione: in MuseScore 4 la
+    // sovrascrittura del cursore non sempre elimina le note della variante
+    // precedente, che restano udibili sotto la nuova.
+    function clearTrack(staffIdx, voice) {
+        var chords = chordsIn(staffIdx, voice);
+        for (var i = chords.length - 1; i >= 0; i--) {
+            try { removeElement(chords[i].el); } catch (e) { console.log("Contrappunto: rimozione non riuscita: " + e); }
+        }
+        return chords.length;
+    }
+
+    // Rilegge la voce scritta e la confronta con la variante: ritorna il numero di differenze
+    function verifyTrack(items, staffIdx, voice) {
+        var want = [], i;
+        for (i = 0; i < items.length; i++) if (items[i].midi !== null) want.push(items[i]);
+        var got = chordsIn(staffIdx, voice), diff = Math.abs(got.length - want.length);
+        for (i = 0; i < Math.min(got.length, want.length); i++) {
+            var notes = got[i].el.notes;
+            if (got[i].tick !== want[i].tick || notes.length !== 1 || notes[0].pitch !== want[i].midi) diff++;
+        }
+        return diff;
+    }
+
     // Scrive gli item in sequenza a partire da rangeStart; ritorna le note da legare
     function writeItems(items, staffIdx, voice) {
+        clearTrack(staffIdx, voice);
         var c = curScore.newCursor();
         c.staffIdx = staffIdx;
         c.voice = 0;
@@ -320,6 +433,7 @@ MuseScore {
         var c = candidates[i];
         if (!c) return "";
         return (i + 1) + ".  Seme " + c.seed + "   ·   punteggio " + c.res.report.quality.toFixed(2) +
+               "   ·   errori " + (c.res.report.errors || 0) + ", avvisi " + (c.res.report.warnings || 0) +
                (i === 0 && candidates.length > 1 ? "   ★ migliore" : "") +
                (c.staff !== undefined && separateStaves ? "   →  rigo " + (c.staff + 1) : "");
     }
@@ -327,8 +441,30 @@ MuseScore {
         var c = candidates[i];
         if (!c) return "";
         var r = c.res.report;
-        return "congiunti " + pct(r.steps, r.leaps) + "  ·  moto contrario " + pct(r.contrary, r.similar) +
-               "  ·  culmini " + r.climaxCount + "  ·  " + (r.parallels ? (r.parallels + " parallele!") : "nessuna parallela");
+        return "congiunti " + pct(r.steps, r.leaps) + "  ·  contrario " + pct(r.contrary, r.similar) +
+               "  ·  " + (r.climaxCount === 1 ? "culmine" : ("culmini " + r.climaxCount)) +
+               (r.climaxAt >= 0 ? " al " + r.climaxAt + "%" : "") + "  ·  " + (r.parallels ? (r.parallels + " parallele!") : "senza parallele");
+    }
+    function checkText(r) {
+        var e = r.errors || 0, w = r.warnings || 0;
+        return (e === 1 ? "1 errore" : e + " errori") + ", " + (w === 1 ? "1 avviso" : w + " avvisi");
+    }
+    readonly property var intervalNames: ["", "all'unisono/ottava", "alla seconda", "alla terza", "alla quarta", "alla quinta", "alla sesta", "alla settima"]
+    function extrasText(r) {
+        var txt = "\nControllo con le regole dell'analisi: " + checkText(r) + ".";
+        var f = r.figures;
+        if (f) {
+            var parts = [];
+            if (f.suspension) parts.push(f.suspension + (f.suspension === 1 ? " ritardo" : " ritardi"));
+            if (f.cambiata) parts.push(f.cambiata + (f.cambiata === 1 ? " cambiata" : " cambiate"));
+            if (f.double) parts.push(f.double + (f.double === 1 ? " doppia volta" : " doppie volte"));
+            if (parts.length) txt += " Figure: " + parts.join(", ") + ".";
+        }
+        if (r.entry) txt += "\nEntrata in imitazione a " + barText(r.entry.tick) + " " + (intervalNames[r.entry.at] || "") +
+                            ": ripresi " + r.entry.matched + " intervalli su " + r.entry.intervals + ".";
+        else if (entryCheck.checked && entryCheck.enabled) txt += "\nEntrata in imitazione non possibile qui (inizio della melodia troppo lungo o brano troppo breve).";
+        if (r.locked) txt += "\n" + r.locked + (r.locked === 1 ? " nota mantenuta" : " note mantenute") + " com'erano.";
+        return txt;
     }
     function describe(c, staff, voice) {
         var r = c.res.report;
@@ -337,18 +473,63 @@ MuseScore {
                "Tonalità " + r.key + ", " + roleName + ". Gradi congiunti " + r.steps + ", salti " + r.leaps +
                ", moto contrario " + r.contrary + ", simile " + r.similar + ".\n" +
                (r.parallels ? ("Attenzione: " + r.details.join("; ")) : "Nessuna quinta o ottava parallela.") +
-               (r.climaxCount === 1 ? " Un solo culmine." : "");
+               (r.climaxCount === 1 ? " Un solo culmine." : "") +
+               (r.swaps ? ("\nIn " + r.swaps + (r.swaps === 1 ? " battuta" : " battute") + " la voce passa " +
+                           (r.altRole === "above" ? "sopra" : "sotto") + " la melodia per lasciarle spazio, invece di tacere.") : "") +
+               extrasText(r) + rangeNote(c);
+    }
+    function rangeNote(c) {
+        var r = c.res.report, ins = c.ins;
+        if (!ins) return "";
+        var roles = { above: "sopra la melodia", middle: "come voce intermedia", below: "sotto la melodia" };
+        var txt = "\nEstensione " + ins.name + " (" + midiName(ins.lo) + "–" + midiName(ins.hi) + ") rispettata, registro " +
+                  midiName(r.range[0]) + "–" + midiName(r.range[1]) + ".";
+        if (r.roleBefore !== r.role) txt += " Per stare nell'estensione la voce va " + roles[r.role] + ".";
+        if (r.rangeShift) txt += " Registro spostato di " + Math.abs(r.rangeShift) + (Math.abs(r.rangeShift) === 1 ? " ottava " : " ottave ") +
+                                 (r.rangeShift > 0 ? "sopra." : "sotto.");
+        return txt;
+    }
+
+    // ------------------------------------------------------------------ estensione dello strumento
+    readonly property var pcNames: ["Do", "Do#", "Re", "Mib", "Mi", "Fa", "Fa#", "Sol", "Lab", "La", "Sib", "Si"]
+    function midiName(m) { return pcNames[m % 12] + (Math.floor(m / 12) - 1); }
+
+    // Estensione (suoni reali) dello strumento che suonerà il contrappunto, o null
+    function targetRange(toNew, staffIdx) {
+        if (toNew) {
+            var ins = instruments[instrumentCombo.currentIndex];
+            return { lo: ins.lo, hi: ins.hi, name: ins.label };
+        }
+        try {
+            for (var p = 0; p < curScore.parts.length; p++) {
+                var part = curScore.parts[p];
+                if (staffIdx < Math.floor(part.startTrack / 4) || staffIdx >= Math.floor(part.endTrack / 4)) continue;
+                // strumento noto: stessa estensione usata quando il rigo è stato creato (risultato ripetibile)
+                var id = "";
+                try { id = part.instrumentId || ""; } catch (e1) {}
+                for (var k = 0; k < instruments.length; k++)
+                    if (id && id === instruments[k].id)
+                        return { lo: instruments[k].lo, hi: instruments[k].hi, name: instruments[k].label };
+                var lo = part.minPitchA, hi = part.maxPitchA;              // estensione "amatoriale" (comoda)
+                if (!(lo > 0 && hi > lo)) { lo = part.minPitchP; hi = part.maxPitchP; }
+                if (lo > 0 && hi > lo) return { lo: lo, hi: hi, name: part.partName || part.longName || "strumento" };
+            }
+        } catch (e) { console.log("Contrappunto: estensione non letta: " + e); }
+        return null;
     }
 
     // ------------------------------------------------------------------ azione principale
     // Il calcolo procede una variante alla volta (Timer) per non bloccare la finestra.
-    function generate() {
+    // extra (facoltativo): { target: { staff, voice }, locked: [...] } per rigenerare intorno alle note mantenute
+    function generate(extra) {
         if (busy) return;
+        extra = extra || {};
         var melStaff = melodyCombo.currentIndex;
         var bassStaff = bassCombo.currentIndex - 1;           // -1 = nessun basso
-        var toNew = newStaffRadio.checked;
-        var tStaff = targetStaffCombo.currentIndex;
-        var tVoice = voiceCombo.currentIndex;
+        var toNew = extra.target ? false : newStaffRadio.checked;
+        var tStaff = extra.target ? extra.target.staff : targetStaffCombo.currentIndex;
+        var tVoice = extra.target ? extra.target.voice : voiceCombo.currentIndex;
+        saveSettings();
 
         if (!toNew && (tStaff === melStaff || tStaff === bassStaff) && tVoice === 0 && staffHasNotes(tStaff, 0)) {
             setStatus("La voce 1 del rigo scelto contiene la melodia o il basso: scegli la voce 2, 3 o 4, oppure un altro rigo.", "error");
@@ -366,6 +547,8 @@ MuseScore {
             ms.push({ tick: m.tick, len: m.len, num: m.num, den: m.den, isFirst: m.isFirst });
         }
         var n = variantsSpin.value;
+        var separate = n > 1 && separateCheck.checked && !extra.locked;
+        lockedNotes = extra.locked || [];
         job = {
             input: { melody: melody, bass: bass, measures: ms, keys: keys, start: rangeStart, end: rangeEnd },
             options: {
@@ -376,12 +559,15 @@ MuseScore {
                 mode: ["auto", "major", "minor"][modeCombo.currentIndex],
                 meter: ["auto", "simple", "compound"][meterCombo.currentIndex],
                 imitation: imitationCheck.checked,
+                entry: entryCheck.checked && entryCheck.enabled,
+                locked: extra.locked || null,
                 variety: varietySlider.value,
-                sameStaff: melStaff === bassStaff
+                sameStaff: melStaff === bassStaff,
+                instrument: targetRange(toNew || separate, tStaff)
             },
             n: n, i: 0, seed0: seedSpin.value, results: [],
             toNew: toNew, tStaff: tStaff, tVoice: tVoice,
-            separate: n > 1 && separateCheck.checked
+            separate: separate
         };
         busy = true;
         setStatus(n > 1 ? ("Calcolo delle varianti: 0 di " + n + "…") : "Calcolo in corso…", "info");
@@ -392,6 +578,12 @@ MuseScore {
 
     // usato dal collaudo
     function setVariants(n, separate) { variantsSpin.value = n; separateCheck.checked = separate; }
+    function setVariantCount(n) { variantsSpin.value = n; return separateCheck.checked; }
+    function setDestination(staff, voice) { existingRadio.checked = true; targetStaffCombo.currentIndex = staff; voiceCombo.currentIndex = voice; }
+    function setSpecies(i) { speciesCombo.currentIndex = i; }
+    function setInstrument(id) {
+        for (var k = 0; k < instruments.length; k++) if (instruments[k].id === id) instrumentCombo.currentIndex = k;
+    }
 
     function seedFor(seed0, i) { return ((seed0 - 1 + i) % 99999) + 1; }
 
@@ -404,7 +596,7 @@ MuseScore {
         var seed = seedFor(j.seed0, j.i);
         inp.options.seed = seed;
         try {
-            j.results.push({ seed: seed, res: Engine.generate(inp) });
+            j.results.push({ seed: seed, res: Engine.generate(inp), ins: j.options.instrument });
         } catch (e) {
             busy = false;
             setStatus("Errore nel calcolo: " + e, "error");
@@ -447,9 +639,10 @@ MuseScore {
             var sig = j.results[i].res.report.signature;
             if (!seen[sig]) { seen[sig] = true; list.push(j.results[i]); }
         }
-        // ordine: prima senza parallele, poi punteggio delle regole più alto
+        // ordine: prima senza parallele, poi meno errori dell'analisi, poi punteggio delle regole più alto
         list.sort(function (a, b) {
             return (a.res.report.parallels - b.res.report.parallels) ||
+                   ((a.res.report.errors || 0) - (b.res.report.errors || 0)) ||
                    (b.res.report.quality - a.res.report.quality) || (a.seed - b.seed);
         });
 
@@ -477,6 +670,9 @@ MuseScore {
             return;
         }
         var nTies = addTies(ties);
+        var mismatch = 0;
+        for (i = 0; i < list.length; i++)
+            if (list[i].staff !== undefined) mismatch += verifyTrack(list[i].res.items, list[i].staff, list[i].voice);
 
         separateStaves = j.separate;
         candidates = list;
@@ -498,7 +694,7 @@ MuseScore {
         var msg;
         if (j.separate) {
             msg = list.length + " varianti scritte in " + list.length + " righi nuovi (dal rigo " + (list[0].staff + 1) +
-                  "), in ordine di qualità. Ascoltale e tieni quella che preferisci.";
+                  "), in ordine di qualità. Ascoltale e tieni quella che preferisci." + rangeNote(list[0]);
         } else {
             msg = describe(list[0], tStaff, tVoice);
             if (list.length > 1) msg = "Scritta la migliore di " + list.length + " varianti. Clicca un'altra variante nell'elenco per sostituirla.\n" + msg;
@@ -507,9 +703,15 @@ MuseScore {
         if (dup > 0) msg += "\n" + dup + (dup === 1 ? " variante era identica" : " varianti erano identiche") +
                             " a un'altra: alza la Varietà per risultati più diversi.";
         if (ties.length && !nTies && tiesCheck.checked) msg += "\nNon è stato possibile creare le legature di valore.";
-        setStatus(msg, list[0].res.report.parallels > 0 ? "error" : "info");
+        if (mismatch) msg = mismatchText(mismatch) + "\n" + msg;
+        setStatus(msg, (mismatch || list[0].res.report.parallels > 0) ? "error" : "info");
         busy = false;
         generationFinished();
+    }
+
+    function mismatchText(n) {
+        return "Attenzione: il rigo non corrisponde esattamente alla variante (" + n + (n === 1 ? " differenza" : " differenze") +
+               "). Annulla con Ctrl+Z e segnala il problema.";
     }
 
     // Clic su una variante dell'elenco: la scrive al posto di quella attuale
@@ -533,11 +735,157 @@ MuseScore {
             return;
         }
         addTies(ties);
+        var mismatch = verifyTrack(c.res.items, target.staff, target.voice);
         c.staff = target.staff; c.voice = target.voice;
         chosen = i;
         seedSpin.value = c.seed;
-        setStatus("Variante " + (i + 1) + " scritta (il suo seme è ora nel campo Seme).\n" + describe(c, target.staff, target.voice),
-                  c.res.report.parallels ? "error" : "info");
+        setStatus((mismatch ? mismatchText(mismatch) + "\n" : "") +
+                  "Variante " + (i + 1) + " scritta (il suo seme è ora nel campo Seme).\n" + describe(c, target.staff, target.voice),
+                  (mismatch || c.res.report.parallels) ? "error" : "info");
+    }
+
+    // ------------------------------------------------------------------ analisi di una voce
+    // La voce analizzata è la destinazione: rigo esistente + voce (dopo una generazione
+    // in un nuovo rigo è quel rigo). Gli errori diventano rossi, gli avvisi arancioni.
+    function voiceTarget() {
+        if (existingRadio.checked) return { staff: targetStaffCombo.currentIndex, voice: voiceCombo.currentIndex };
+        return target;
+    }
+    function isMark(nt) {
+        var c = "";
+        try { c = String(nt.color).toLowerCase(); } catch (e) { return false; }
+        return c.indexOf(markError) === 0 || c.indexOf(markWarning) === 0;
+    }
+    function clearMarks(staffIdx, voice) {
+        var chords = chordsIn(staffIdx, voice), n = 0;
+        for (var i = 0; i < chords.length; i++)
+            for (var k = 0; k < chords[i].el.notes.length; k++) {
+                var nt = chords[i].el.notes[k];
+                if (isMark(nt)) { nt.color = "#000000"; n++; }
+            }
+        return n;
+    }
+
+    function analyzeVoice() {
+        if (busy) return;
+        var tg = voiceTarget();
+        if (!tg) { setStatus("Per analizzare una voce scegli in Destinazione «Rigo esistente» e la voce da controllare.", "error"); return; }
+        var melStaff = melodyCombo.currentIndex, bassStaff = bassCombo.currentIndex - 1;
+        if ((tg.staff === melStaff || tg.staff === bassStaff) && tg.voice === 0) {
+            setStatus("La voce 1 di quel rigo è la melodia o il basso: scegli la voce del contrappunto da analizzare.", "error");
+            return;
+        }
+        saveSettings();
+        var line = readStaff(tg.staff, -1, tg.voice);
+        if (!line.length) { setStatus("La voce " + (tg.voice + 1) + " del rigo " + (tg.staff + 1) + " non ha note nell'intervallo.", "error"); return; }
+        var measures = allMeasures(), ms = [];
+        for (var i = 0; i < measures.length; i++) {
+            var m = measures[i];
+            if (m.tick + m.len <= rangeStart || m.tick >= rangeEnd) continue;
+            ms.push({ tick: m.tick, len: m.len, num: m.num, den: m.den, isFirst: m.isFirst });
+        }
+        var res;
+        try {
+            res = Engine.analyze({
+                melody: readStaff(melStaff, tg.staff === melStaff ? tg.voice : -1),
+                bass: bassStaff >= 0 ? readStaff(bassStaff, tg.staff === bassStaff ? tg.voice : -1) : [],
+                measures: ms, keys: readKeys(melStaff, measures), start: rangeStart, end: rangeEnd, line: line,
+                options: { strictness: strictCombo.currentIndex === 0 ? "strict" : "free",
+                           mode: ["auto", "major", "minor"][modeCombo.currentIndex],
+                           meter: ["auto", "simple", "compound"][meterCombo.currentIndex],
+                           sameStaff: melStaff === bassStaff }
+            });
+        } catch (e) { setStatus("Errore nell'analisi: " + e, "error"); return; }
+        // colori: la nota (o la nota tenuta) che contiene il tick del rilievo
+        var chords = chordsIn(tg.staff, tg.voice), marked = 0;
+        curScore.startCmd();
+        try {
+            clearMarks(tg.staff, tg.voice);
+            for (i = 0; i < res.findings.length; i++) {
+                var f = res.findings[i], hit = null;
+                for (var k = 0; k < chords.length && chords[k].tick <= f.tick; k++) hit = chords[k];
+                if (!hit) continue;
+                for (var q = 0; q < hit.el.notes.length; q++) {
+                    var nt = hit.el.notes[q];
+                    if (f.level === "error" || String(nt.color).toLowerCase().indexOf(markError) !== 0) nt.color = f.level === "error" ? markError : markWarning;
+                }
+                marked++;
+            }
+            curScore.endCmd();
+        } catch (e2) { curScore.endCmd(true); setStatus("Errore durante la colorazione: " + e2, "error"); return; }
+        var r = res.report, lines = [];
+        for (i = 0; i < res.findings.length && i < 40; i++)
+            lines.push((res.findings[i].level === "error" ? "✖ " : "▲ ") + barText(res.findings[i].tick) + ": " + res.findings[i].text);
+        if (res.findings.length > 40) lines.push("… e altri " + (res.findings.length - 40) + ".");
+        var roleName = { above: "sopra la melodia", middle: "voce intermedia", below: "sotto la melodia" }[r.role];
+        var head = "Analisi della voce " + (tg.voice + 1) + " del rigo " + (tg.staff + 1) + " (" + r.notes + " note, " + roleName + ", " + r.key + "): " +
+                   checkText(r) + "." + (res.findings.length ? " Errori in rosso, avvisi in arancione; Ctrl+Z toglie i colori." : " Nessun rilievo.");
+        setStatus(head + (lines.length ? "\n" + lines.join("\n") : ""), r.errors ? "error" : (r.warnings ? "info" : "good"));
+        lastAnalysis = res;
+    }
+    property var lastAnalysis: null
+
+    // ------------------------------------------------------------------ rigenerazione intorno alle note scelte
+    // Note da mantenere: quelle selezionate nella voce di destinazione; se non ce ne sono,
+    // quelle cambiate a mano rispetto alla variante scritta dal plugin (più quelle già
+    // mantenute la volta precedente, se sono ancora lì).
+    function noteSelected(nt, list) {
+        try { if (nt.selected === true) return true; } catch (e) {}
+        for (var i = 0; i < list.length; i++) if (list[i] === nt) return true;
+        return false;
+    }
+    function lockedFrom(tg) {
+        var chords = chordsIn(tg.staff, tg.voice), sel = [], i;
+        try {
+            var els = curScore.selection.elements;
+            for (i = 0; els && i < els.length; i++) if (els[i].type === Element.NOTE) sel.push(els[i]);
+        } catch (e) {}
+        var picked = [], how = "";
+        if (sel.length) {
+            for (i = 0; i < chords.length; i++) {
+                for (var k = 0; k < chords[i].el.notes.length; k++)
+                    if (noteSelected(chords[i].el.notes[k], sel)) { picked.push(chords[i]); break; }
+            }
+            if (picked.length) how = "selezionate";
+        }
+        if (!picked.length) {
+            var c = chosen >= 0 ? candidates[chosen] : null, want = {};
+            if (c && c.staff === tg.staff && c.voice === tg.voice) {
+                for (i = 0; i < c.res.items.length; i++) if (c.res.items[i].midi !== null) want[c.res.items[i].tick] = c.res.items[i];
+                var kept = {};
+                for (i = 0; i < lockedNotes.length; i++) kept[lockedNotes[i].tick + ":" + lockedNotes[i].midi] = true;
+                for (i = 0; i < chords.length; i++) {
+                    var nt0 = chords[i].el.notes[chords[i].el.notes.length - 1], w = want[chords[i].tick];
+                    var same = w && w.midi === nt0.pitch && w.ticks === elTicks(chords[i].el);
+                    if (!same || kept[chords[i].tick + ":" + nt0.pitch]) picked.push(chords[i]);
+                }
+                if (picked.length) how = "cambiate a mano";
+            }
+        }
+        // in eventi { tick, dur, midi, tpc }: nota più acuta dell'accordo, legature unite
+        var out = [];
+        for (i = 0; i < picked.length; i++) {
+            var el = picked[i].el, nt = el.notes[el.notes.length - 1];
+            for (var q = 0; q < el.notes.length; q++) if (el.notes[q].pitch > nt.pitch) nt = el.notes[q];
+            var d = elTicks(el), last = out[out.length - 1];
+            if (last && nt.tieBack && last.midi === nt.pitch && last.tick + last.dur === picked[i].tick) { last.dur += d; continue; }
+            out.push({ tick: picked[i].tick, dur: d, midi: nt.pitch, tpc: (nt.tpc1 !== undefined ? nt.tpc1 : nt.tpc) });
+        }
+        return { notes: out, how: how };
+    }
+
+    function regenerateRest() {
+        if (busy) return;
+        var tg = voiceTarget();
+        if (!tg) { setStatus("Scegli in Destinazione «Rigo esistente» e la voce del contrappunto da rigenerare.", "error"); return; }
+        var lk = lockedFrom(tg);
+        if (!lk.notes.length) {
+            setStatus("Nessuna nota da mantenere: seleziona nella voce " + (tg.voice + 1) + " del rigo " + (tg.staff + 1) +
+                      " le note da tenere (Ctrl+clic), oppure modifica a mano la variante generata, poi premi di nuovo «Rigenera il resto».", "error");
+            return;
+        }
+        console.log("Contrappunto: " + lk.notes.length + " note mantenute (" + lk.how + ")");
+        generate({ target: tg, locked: lk.notes });
     }
 
     // ------------------------------------------------------------------ interfaccia
@@ -553,7 +901,7 @@ MuseScore {
         palette.button: plugin.cButton
         palette.buttonText: plugin.cText
         palette.highlight: plugin.cAccent
-        palette.highlightedText: plugin.dark ? "#ffffff" : "#ffffff"
+        palette.highlightedText: "#ffffff"
         palette.mid: plugin.cBorder
         palette.dark: plugin.cBorder
         palette.light: plugin.mix(plugin.cButton, plugin.cBg, 0.5)
@@ -573,6 +921,7 @@ MuseScore {
                 Layout.fillWidth: true
                 spacing: 12
                 Label { text: "Contrappunto automatico"; font.bold: true; font.pixelSize: 17; color: plugin.cText }
+                Label { text: "v" + plugin.version; color: plugin.cTextDim }
                 Label {
                     text: plugin.rangeLabel; color: plugin.cTextDim
                     elide: Text.ElideRight; Layout.fillWidth: true
@@ -664,6 +1013,12 @@ MuseScore {
                                 Layout.columnSpan: 2
                                 SpinBox {
                                     id: variantsSpin; from: 1; to: 8; value: 1
+                                    // passando a più varianti si propone il confronto su righi separati
+                                    property int lastValue: 1
+                                    onValueChanged: {
+                                        if (value > 1 && lastValue <= 1) separateCheck.checked = true;
+                                        lastValue = value;
+                                    }
                                     ToolTip.visible: hovered; ToolTip.delay: 600
                                     ToolTip.text: "Calcola più varianti (semi consecutivi) e le ordina per qualità"
                                 }
@@ -712,6 +1067,14 @@ MuseScore {
                             Label { text: "Metro:"; color: plugin.cText }
                             ComboBox { id: meterCombo; model: ["Automatico", "Semplice (2/4, 3/4, 4/4…)", "Composto (6/8, 9/8, 12/8…)"]; Layout.fillWidth: true }
                             CheckBox { id: imitationCheck; Layout.columnSpan: 2; text: "Imita il motivo della melodia nelle sue pause"; checked: true }
+                            CheckBox {
+                                id: entryCheck; Layout.columnSpan: 2
+                                text: "Entrata in imitazione (libero e fiorito)"
+                                enabled: speciesCombo.currentIndex === 0 || speciesCombo.currentIndex === 5
+                                opacity: enabled ? 1 : 0.45
+                                ToolTip.visible: hovered; ToolTip.delay: 600
+                                ToolTip.text: "Il contrappunto tace mentre la melodia espone il suo inizio, poi lo riprende all'ottava, alla quinta o alla quarta"
+                            }
                             CheckBox { id: tiesCheck; Layout.columnSpan: 2; text: "Lega le note tenute (legature di valore)"; checked: true }
                         }
                     }
@@ -756,7 +1119,7 @@ MuseScore {
                                 Label {
                                     width: parent.width; elide: Text.ElideRight
                                     text: plugin.candStats(index); font.pixelSize: 11
-                                    color: modelData.res.report.parallels ? plugin.cError : plugin.cTextDim
+                                    color: (modelData.res.report.parallels || modelData.res.report.errors) ? plugin.cError : plugin.cTextDim
                                 }
                             }
                             MouseArea {
@@ -806,11 +1169,25 @@ MuseScore {
                 BusyIndicator { running: plugin.busy; visible: plugin.busy; Layout.preferredHeight: 28; Layout.preferredWidth: 28 }
                 Item { Layout.fillWidth: true }
                 Button {
+                    text: "Analizza la voce"
+                    enabled: !plugin.busy
+                    onClicked: analyzeVoice()
+                    ToolTip.visible: hovered; ToolTip.delay: 600
+                    ToolTip.text: "Controlla la voce di destinazione (rigo esistente + voce) con le regole del motore: errori in rosso, avvisi in arancione"
+                }
+                Button {
+                    text: "Rigenera il resto"
+                    enabled: !plugin.busy
+                    onClicked: regenerateRest()
+                    ToolTip.visible: hovered; ToolTip.delay: 600
+                    ToolTip.text: "Mantiene le note selezionate (o cambiate a mano) nella voce di destinazione e ricalcola tutte le altre"
+                }
+                Button {
                     text: variantsSpin.value > 1 ? ("Genera " + variantsSpin.value + " varianti") : "Genera"
                     highlighted: true; enabled: !plugin.busy
                     onClicked: generate()
                 }
-                Button { text: "Chiudi"; enabled: !plugin.busy; onClicked: quit() }
+                Button { text: "Chiudi"; enabled: !plugin.busy; onClicked: { saveSettings(); quit(); } }
             }
         }
     }
