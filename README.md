@@ -118,3 +118,20 @@ aprire e ascoltare in MuseScore.
 - Nei passaggi in cui melodia e accompagnamento sono molto vicini (per esempio
   un arpeggio condiviso tra le mani) il contrappunto può fare brevi pause per
   evitare quinte od ottave parallele.
+
+## Release
+
+Il workflow `.github/workflows/release.yml` collauda il motore e il plugin QML
+(con un finto MuseScore) a ogni push e pull request, e prepara il pacchetto tra
+gli *artifacts* dell'esecuzione. Per pubblicare una versione:
+
+1. aggiorna `version:` in `plugin/Contrappunto/contrappunto.qml`;
+2. aggiungi in `CHANGELOG.md` la sezione `## X.Y.Z` con le note di rilascio;
+3. crea e invia il tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+   (oppure *Actions → Release → Run workflow* indicando la versione).
+
+La release contiene `Contrappunto-X.Y.Z.zip` (cartella `Contrappunto/` con i
+due file del plugin e `README.TXT`) e `README.TXT` a parte, con note di
+rilascio, funzionalità, installazione e istruzioni d'uso. Il testo fisso del
+README.TXT è in `release/README_TEMPLATE.txt`; per provarlo in locale:
+`python3 tools/build_release.py` (scrive in `dist/`).

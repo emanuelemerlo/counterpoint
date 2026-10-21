@@ -1,0 +1,40 @@
+# Note di rilascio
+
+Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
+(tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
+Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
+
+## 2.1.0
+
+### Novità
+- Confronto di più varianti: il campo «Quante» (1–8) calcola altrettante
+  varianti con semi consecutivi e le elenca in ordine di qualità (prima quelle
+  senza quinte o ottave parallele, poi il punteggio delle regole), con
+  percentuale di gradi congiunti, di moto contrario e numero di culmini.
+- La variante migliore viene scritta subito; un clic su un'altra variante
+  dell'elenco la sostituisce (annullabile con Ctrl+Z) e ne copia il seme nel
+  campo Seme.
+- Opzione «Una variante per rigo nuovo»: ogni variante in un rigo a sé, con
+  un'etichetta, per ascoltarle a confronto.
+- Il calcolo procede una variante alla volta, con indicatore di avanzamento:
+  la finestra non si blocca.
+
+### Miglioramenti
+- La finestra segue il tema di MuseScore (chiaro, scuro, alto contrasto) o, in
+  mancanza, quello del sistema: niente più scritte bianche su fondo chiaro.
+- Nuova disposizione su due colonne che entra in una schermata, senza
+  scorrimento.
+- Il punteggio di qualità esclude il rumore della «Varietà», quindi è
+  confrontabile tra semi diversi. A parità di impostazioni e seme il risultato
+  resta identico alla versione 2.0.0.
+
+## 2.0.0
+
+- Prima versione del plugin per MuseScore 4, riscritta dallo script Python.
+- Ricerca dell'intera linea (beam search) invece della scelta nota per nota.
+- Specie: libero, 1:1, 2:1, 4:1, ritardi, fiorito; posizione sopra, intermedia
+  o al basso; regole rigorose o libere.
+- Niente quinte e ottave parallele; dissonanze solo come note di passaggio, di
+  volta, ritardi preparati o settime di dominante; un solo culmine.
+- Scrittura in un nuovo rigo o in una voce di un rigo esistente, con
+  legature di valore e ortografia corretta delle alterazioni.

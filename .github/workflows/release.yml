@@ -1,0 +1,100 @@
+# Collaudo, pacchetto e release del plugin.
+#
+# - push su un ramo o pull request: collaudo + pacchetto scaricabile tra gli
+#   "artifacts" dell'esecuzione (nessuna release).
+# - push di un tag vX.Y.Z: collaudo + pacchetto + release GitHub con lo zip del
+#   plugin, README.TXT e le note prese da CHANGELOG.md.
+# - avvio manuale (Actions → Release → Run workflow): come sopra; indicando la
+#   versione crea il tag e la release sul commit scelto.
+#
+# Il numero di versione deve coincidere con `version:` in contrappunto.qml e
+# avere una sezione "## X.Y.Z" in CHANGELOG.md, altrimenti il workflow si ferma.
+name: Release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versione da pubblicare (es. 2.1.0); vuoto = solo pacchetto di prova"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collaudo del motore (nessuna quinta/ottava parallela)
+        run: node tests/run_tests.js
+
+      - name: Librerie di sistema per Qt (offscreen)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libglib2.0-0 libdbus-1-3
+
+      - name: Collaudo del plugin QML con un finto MuseScore
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          pip install -q PySide6-Essentials
+          timeout 120 python3 tests/mock/run_mock.py 2>&1 | tee mock.log
+          grep -q "RESULT OK" mock.log
+
+      - name: Determina la versione da pubblicare
+        id: ver
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "create_tag=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pacchetto (zip, README.TXT, note di rilascio)
+        id: pkg
+        run: python3 tools/build_release.py ${{ steps.ver.outputs.tag && format('--expect-version {0}', steps.ver.outputs.tag) || '' }}
+
+      - name: Carica il pacchetto tra gli artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Contrappunto-${{ steps.pkg.outputs.version }}
+          path: |
+            dist/Contrappunto-*.zip
+            dist/README.TXT
+            dist/release-notes.md
+
+      - name: Pubblica la release
+        if: steps.ver.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          extra=()
+          if [[ "${{ steps.ver.outputs.create_tag }}" == "true" ]]; then extra+=(--target "$GITHUB_SHA"); fi
+          if [[ "$VERSION" == *-* ]]; then extra+=(--prerelease); fi
+          gh release create "$TAG" \
+            "dist/Contrappunto-${VERSION}.zip" dist/README.TXT \
+            --title "Contrappunto automatico ${VERSION}" \
+            --notes-file dist/release-notes.md \
+            "${extra[@]}"
