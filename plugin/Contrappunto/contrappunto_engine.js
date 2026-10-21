@@ -303,6 +303,8 @@ function generate(input) {
     planClimax(C);
     var events = planEvents(C);
     annotate(C, events);
+    planRoles(C, events);
+    placeClimax(C, events);
     var path = search(C, events);
     var items = buildItems(C, events, path);
     var report = verify(C, events, path);
@@ -311,6 +313,8 @@ function generate(input) {
     report.range = [C.lo, C.hi];
     report.rangeShift = C.rangeShift;      // ottave di spostamento per l'estensione dello strumento
     report.roleBefore = C.roleBefore;
+    report.swaps = C.swaps || 0;           // battute in cui la voce passa dall'altra parte della melodia
+    report.altRole = C.role === "above" ? (C.hasBass ? "middle" : "below") : "above";
     report.events = events.length;
     report.notes = items.filter(function (x) { return x.midi !== null; }).length;
     report.quality = Math.round(C.quality * 100) / 100;
@@ -347,6 +351,21 @@ function detectKeys(C, keys) {
 }
 function keyAt(C, t) { var i = bsearch(C.keys, t); return C.keys[i < 0 ? 0 : i].key; }
 
+// registro naturale di un ruolo, date le altezze tipiche di melodia (mm) e basso (bm)
+function roleRange(r, mm, bm, preset) {
+    var lo, hi;
+    if (preset) { lo = preset[0]; hi = preset[1]; }
+    else if (r === "above") { lo = mm - 2; hi = mm + 14; }
+    else if (r === "middle") {
+        var c = Math.round((mm + bm) / 2);
+        lo = Math.max(c - 8, bm + 3); hi = Math.min(c + 8, mm + 1);
+        if (hi - lo < 12) { lo = c - 6; hi = c + 6; }
+    } else { lo = mm - 19; hi = mm - 1; }
+    lo = Math.max(lo, 36); hi = Math.min(hi, 91);
+    if (hi - lo < 10) hi = lo + 12;
+    return [lo, hi];
+}
+
 function chooseRange(C) {
     var mm = weightedMedian(C.melLine);
     var bm = C.hasBass ? weightedMedian(C.bassLine) : null;
@@ -363,19 +382,7 @@ function chooseRange(C) {
     if (role === "middle" && !C.hasBass) role = "below";
     if (role === "below" && C.hasBass) role = "middle";
 
-    function rangeFor(r) {
-        var lo, hi;
-        if (presets[reg]) { lo = presets[reg][0]; hi = presets[reg][1]; }
-        else if (r === "above") { lo = mm - 2; hi = mm + 14; }
-        else if (r === "middle") {
-            var c = Math.round((mm + bm) / 2);
-            lo = Math.max(c - 8, bm + 3); hi = Math.min(c + 8, mm + 1);
-            if (hi - lo < 12) { lo = c - 6; hi = c + 6; }
-        } else { lo = mm - 19; hi = mm - 1; }
-        lo = Math.max(lo, 36); hi = Math.min(hi, 91);
-        if (hi - lo < 10) hi = lo + 12;
-        return [lo, hi];
-    }
+    function rangeFor(r) { return roleRange(r, mm, bm, presets[reg]); }
     var rg = rangeFor(role), roleBefore = role, shift = 0;
 
     // Estensione dello strumento di destinazione. Se il registro non ci sta:
@@ -412,6 +419,9 @@ function chooseRange(C) {
     }
     C.rangeShift = shift; C.roleBefore = roleBefore;
     C.role = role; C.lo = rg[0]; C.hi = rg[1]; C.melMed = mm; C.bassMed = bm;
+    C.candLo = C.lo; C.candHi = C.hi;          // allargati da planRoles se la voce cambia lato
+    C.ins = (ins && ins.lo > 0 && ins.hi > ins.lo) ? ins : null;
+    C.fixedRegister = !!presets[reg];
     C.candCache = {};
 }
 
@@ -421,7 +431,7 @@ function candsFor(C, key) {
     var out = [];
     for (var i = 0; i < key.scale.length; i++) {
         var sc = key.scale[i], pc = tpcToPc(sc.tpc), letter = tpcToLetter(sc.tpc);
-        for (var midi = C.lo; midi <= C.hi; midi++) {
+        for (var midi = C.candLo; midi <= C.candHi; midi++) {
             if (mod(midi, 12) !== pc) continue;
             out.push({ midi: midi, tpc: sc.tpc, pc: pc, letter: letter, dia: diaOf(midi, letter), deg: sc.deg,
                        raised: sc.raised, natural: sc.natural,
@@ -717,11 +727,8 @@ function annotate(C, events) {
             }
         });
         ev.rest = !ev.mel && !ev.bass && !ev.inner.some(function (x) { return x.mel || x.bass; });
-        // spazio reale disponibile per il contrappunto in questo istante
-        if (C.role === "middle" && ev.mel) ev.crowded = ev.mel.midi - Math.max(C.lo, ev.bass ? ev.bass.midi + 3 : C.lo) < 6;
-        else if (C.role === "above" && ev.mel) ev.crowded = Math.min(C.hi, ev.mel.midi + 16) - Math.max(C.lo, ev.mel.midi + 3) < 4;
-        else if (C.role === "below" && ev.mel) ev.crowded = Math.min(C.hi, ev.mel.midi - 3) - C.lo < 4;
-        else ev.crowded = false;
+        ev.role = C.role; ev.lo = C.lo; ev.hi = C.hi;
+        ev.crowded = crowdedFor(ev, ev.role, ev.lo, ev.hi);
         ev.isFinal = (i === events.length - 1);
         ev.isCad = false;
         for (var c = 0; c < cadSet.length; c++) if (cadSet[c] >= t && cadSet[c] < te) ev.isCad = true;
@@ -741,13 +748,119 @@ function annotate(C, events) {
     }
 }
 
+// spazio reale disponibile per il contrappunto in questo istante, con un dato ruolo e registro
+function crowdedFor(ev, role, lo, hi) {
+    if (!ev.mel) return false;
+    if (role === "middle") return ev.mel.midi - Math.max(lo, ev.bass ? ev.bass.midi + 3 : lo) < 6;
+    if (role === "above") return Math.min(hi, ev.mel.midi + 16) - Math.max(lo, ev.mel.midi + 3) < 4;
+    return Math.min(hi, ev.mel.midi - 3) - lo < 4;
+}
+
+// Ruolo locale. Se in una battuta la melodia sale (o scende) tanto da non
+// lasciare spazio alla voce nel suo ruolo, la voce passa dall'altra parte della
+// melodia per quelle battute (scambio delle parti), dentro l'estensione dello
+// strumento, invece di tacere. Torna al suo ruolo appena c'è di nuovo spazio.
+function planRoles(C, events) {
+    C.swaps = 0;
+    if (C.fixedRegister || !events.length) return;
+    var home = C.role;
+    var alt = home === "above" ? (C.hasBass ? "middle" : "below") : "above";
+    var insLo = C.ins ? C.ins.lo : 36, insHi = C.ins ? C.ins.hi : 91;
+    // raggruppa gli eventi per battuta
+    var groups = [], cur = null, i;
+    for (i = 0; i < events.length; i++) {
+        var m = events[i].m;
+        if (!cur || cur.m !== m) { cur = { m: m, evs: [] }; groups.push(cur); }
+        cur.evs.push(events[i]);
+    }
+    var swap = [];
+    for (var g = 0; g < groups.length; g++) {
+        var evs = groups[g].evs, crowdT = 0, melT = 0, mel = [], bas = [];
+        for (i = 0; i < evs.length; i++) {
+            var e = evs[i];
+            if (!e.mel) continue;
+            melT += e.dur;
+            if (e.crowded) crowdT += e.dur;
+            mel.push(e.mel.midi);
+            if (e.bass) bas.push(e.bass.midi);
+        }
+        var band = null;
+        if (melT > 0 && crowdT >= 0.5 * melT) {
+            mel.sort(function (a, b) { return a - b; });
+            var mm = mel[mel.length >> 1];
+            var bm = bas.length ? bas.sort(function (a, b) { return a - b; })[bas.length >> 1] : C.bassMed;
+            var rg = roleRange(alt, mm, bm, null);
+            var lo = Math.max(rg[0], insLo), hi = Math.min(rg[1], insHi);
+            var free = 0, tot = 0;
+            for (i = 0; i < evs.length; i++) if (evs[i].mel) { tot += evs[i].dur; if (!crowdedFor(evs[i], alt, lo, hi)) free += evs[i].dur; }
+            if (hi - lo >= 7 && free >= 0.6 * tot) band = [lo, hi];
+        }
+        swap.push(band);
+    }
+    // battuta isolata tra due battute scambiate: resta dall'altra parte (niente andirivieni)
+    for (g = 1; g < groups.length - 1; g++)
+        if (!swap[g] && swap[g - 1] && swap[g + 1]) swap[g] = [Math.min(swap[g - 1][0], swap[g + 1][0]), Math.max(swap[g - 1][1], swap[g + 1][1])];
+    for (g = 0; g < groups.length; g++) {
+        if (!swap[g]) continue;
+        C.swaps++;
+        for (i = 0; i < groups[g].evs.length; i++) {
+            var ev = groups[g].evs[i];
+            ev.role = alt; ev.lo = swap[g][0]; ev.hi = swap[g][1];
+            ev.crowded = crowdedFor(ev, alt, ev.lo, ev.hi);
+            for (var q = 0; q < (ev.inner || []).length; q++) ev.inner[q].role = alt;
+        }
+        C.candLo = Math.min(C.candLo, swap[g][0]);
+        C.candHi = Math.max(C.candHi, swap[g][1]);
+    }
+    C.candCache = {};
+}
+
+// nota più acuta che la voce può tenere in questo evento senza incrociare la melodia
+function reachTop(ev) {
+    if (!ev.mel) return ev.hi;
+    if (ev.role === "above") return ev.mel.midi + 3 <= ev.hi ? ev.hi : -1;
+    return Math.min(ev.hi, ev.mel.midi - 3);
+}
+
+// Dopo planRoles: la frase del culmine è, tra quelle della parte centrale del
+// brano, quella che arriva più in alto nel suo registro locale (a parità, la più
+// vicina al 60%); la zona alta è l'ultimo tono di quel registro.
+function placeClimax(C, events) {
+    if (!C.apex || !events.length) return;
+    var len = C.end - C.start;
+    var bounds = [C.start].concat(C.cadences.filter(function (t) { return t > C.start && t < C.end; })).concat([C.end]);
+    var best = null;
+    for (var b = 0; b < bounds.length - 1; b++) {
+        var t0 = bounds[b], t1 = bounds[b + 1] + 1, mid = ((t0 + t1) / 2 - C.start) / len;
+        if (mid < 0.35 || mid > 0.85 || t1 - t0 < 0.04 * len) continue;
+        var hi = -1;                                // altezza davvero raggiungibile nella frase
+        for (var i = 0; i < events.length; i++) {
+            var ev = events[i];
+            if (ev.tick < t0 || ev.tick >= t1 || ev.rest || ev.dur < ev.m.beat / 2) continue;
+            hi = Math.max(hi, reachTop(ev));
+        }
+        if (hi < 0) continue;
+        var cand = { t0: t0, t1: t1, hi: hi, dist: Math.abs(mid - 0.6) };
+        if (!best || cand.hi > best.hi || (cand.hi === best.hi && cand.dist < best.dist)) best = cand;
+    }
+    if (best) C.apex = { t0: best.t0, t1: best.t1, top: best.hi - 2 };
+    else {
+        var hi2 = -1;
+        for (var j = 0; j < events.length; j++)
+            if (events[j].tick >= C.apex.t0 && events[j].tick < C.apex.t1 && !events[j].rest) hi2 = Math.max(hi2, reachTop(events[j]));
+        if (hi2 > 0) C.apex.top = hi2 - 2;
+    }
+}
+
 // ---------------------------------------------------------------- valutazione
 var DISS_LOW = { 1: 1, 2: 1, 5: 1, 6: 1, 10: 1, 11: 1 };   // contro la voce più grave
 var DISS_UP = { 1: 1, 2: 1, 10: 1, 11: 1 };               // tra voci superiori
 
 function staticScore(C, ev, c) {
-    var s = 0, role = C.role, r = { dissB: false, dissM: false, sev: false, ct: false };
+    var s = 0, role = ev.role || C.role, r = { dissB: false, dissM: false, sev: false, ct: false };
     var bass = ev.bass, mel = ev.mel, ch = ev.chord, cb = -1, x;
+    if (c.midi < ev.lo) s -= 25 + 8 * (ev.lo - c.midi);       // fuori dal registro di questo tratto
+    else if (c.midi > ev.hi) s -= 25 + 8 * (c.midi - ev.hi);
     if (bass) {
         var ib = c.midi - bass.midi;
         if (ib < 0) s -= 80; else if (ib === 0) s -= 25;
@@ -880,7 +993,7 @@ function evalTransition(C, ev, node, c, st, relax) {
 
     // 3. sensibile e alterazioni del minore
     if (p && !hold) {
-        if (p.isLT && node.ltActive && d !== 1) s -= (ev.isCad || ev.isFinal) ? 40 : (C.role === "middle" ? 10 : 18);
+        if (p.isLT && node.ltActive && d !== 1) s -= (ev.isCad || ev.isFinal) ? 40 : (ev.role === "middle" ? 10 : 18);
         if (p.isLT && node.ltActive && d === 1) s += 4;
         if (p.raised && d < 0) s -= 30;
         if (p.raised && p.deg === 5 && !(d === 1 && c.raised)) s -= 12;
@@ -899,7 +1012,7 @@ function evalTransition(C, ev, node, c, st, relax) {
         else if (ad === 5) s += (mv === 8) ? -12 : (strict ? -40 : -22);
         else if (ad === 7) s += (am === 12) ? -12 : -90;
         else s -= 100;
-        if (C.role === "below" && (ad === 3 || ad === 4 || ad === 7)) s += 8;   // salti tipici del basso
+        if (ev.role === "below" && (ad === 3 || ad === 4 || ad === 7)) s += 8;   // salti tipici del basso
         if (ev.dur < ev.m.beat && ad >= 3) s -= 10;
         var L = node.lastD;
         if (Math.abs(L) >= 3) {
@@ -926,7 +1039,7 @@ function evalTransition(C, ev, node, c, st, relax) {
     } else if (!p) {
         s += st.ct ? 6 : -10;
         if (node.restBy && ev.strength < 2) s -= 10;     // rientro preferibilmente su tempo forte
-        if (ev.idx === 0 && C.role === "below") s += (c.pc === ev.key.tonicPc) ? 25 : -10;
+        if (ev.idx === 0 && ev.role === "below") s += (c.pc === ev.key.tonicPc) ? 25 : -10;
         if (ev.bass) { var x0 = mod(c.midi - ev.bass.midi, 12); if (x0 === 0 || x0 === 7) s += 4; }
         if (c.midi > node.maxM) { newMax = c.midi; newCnt = 1; newMaxIdx = ev.idx; }
     }
@@ -954,7 +1067,7 @@ function evalTransition(C, ev, node, c, st, relax) {
             if (dirB !== 0 && r0 === r1 && (r1 === 0 || r1 === 7)) { if (!relax) return null; s -= 400; }
             if (dirB === dirC && (r1 === 0 || r1 === 7)) {
                 var leap = Math.abs(mv) > 2;
-                if (C.role === "above") s -= leap ? (strict ? 150 : 60) : 15;
+                if (ev.role === "above") s -= leap ? (strict ? 150 : 60) : 15;
                 else s -= leap ? (strict ? 30 : 12) : 4;
             }
             if (dirB !== 0 && dirB === -dirC) s += 6;
@@ -964,8 +1077,8 @@ function evalTransition(C, ev, node, c, st, relax) {
             var q0 = Math.abs(mp.midi - p.midi) % 12, q1 = Math.abs(m.midi - c.midi) % 12;
             if (dirM !== 0 && q0 === q1 && (q1 === 0 || q1 === 7)) { if (!relax) return null; s -= 400; }
             if (dirM === dirC && (q1 === 0 || q1 === 7)) {
-                var upperLeap = C.role === "above" ? Math.abs(mv) > 2 : Math.abs(m.midi - mp.midi) > 2;
-                var outer = C.role === "above" || C.role === "below";
+                var upperLeap = ev.role === "above" ? Math.abs(mv) > 2 : Math.abs(m.midi - mp.midi) > 2;
+                var outer = ev.role === "above" || ev.role === "below";
                 s -= upperLeap ? (outer ? (strict ? 120 : 50) : 25) : 6;
             }
             if (dirM !== 0 && dirM === -dirC) s += 6;
@@ -984,7 +1097,7 @@ function evalTransition(C, ev, node, c, st, relax) {
     }
 
     // 8. cadenza: avvicinamento per grado
-    if ((ev.isCad || ev.isFinal) && p && !hold && C.role !== "below") s += (ad === 1 ? 10 : (ad === 2 ? 2 : -6));
+    if ((ev.isCad || ev.isFinal) && p && !hold && ev.role !== "below") s += (ad === 1 ? 10 : (ad === 2 ? 2 : -6));
 
     // 9. evita di ripetere la stessa figura battuta dopo battuta
     if (p && !hold) {
@@ -994,10 +1107,11 @@ function evalTransition(C, ev, node, c, st, relax) {
 
     // culmine pianificato (vedi planClimax)
     var apexHit = node.apexHit;
-    if (C.apex && !hold && c.midi >= C.apex.top) {
+    if (C.apex && !hold && c.midi >= C.apex.top - 2) {
         var inWin = ev.tick >= C.apex.t0 && ev.tick < C.apex.t1;
-        if (!inWin) s -= 120 + 8 * (c.midi - C.apex.top);
-        else if (!node.apexHit) { s += 24; apexHit = true; }
+        if (c.midi < C.apex.top) { if (!inWin) s -= 6; }        // appena sotto la vetta: picchi secondari più bassi
+        else if (!inWin) s -= 120 + 8 * (c.midi - C.apex.top);
+        else if (!node.apexHit) { s += 40; apexHit = true; }
         else if (c.midi >= node.maxM) s -= 20;
     }
 
@@ -1087,6 +1201,7 @@ function search(C, events) {
     for (n = 0; n < beam.length; n++) {
         var nd = beam[n], sc = nd.score;
         if (nd.pend) sc -= 100;
+        if (C.apex && !nd.apexHit && total > 8) sc -= 60;     // la linea non ha toccato il culmine previsto
         if (nd.maxIdx >= 0 && total > 4) {
             var rel = nd.maxIdx / total;
             if (rel >= 0.35 && rel <= 0.85) sc += 25;

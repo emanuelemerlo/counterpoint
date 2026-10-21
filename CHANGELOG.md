@@ -4,6 +4,23 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.4.0
+
+### Correzioni
+- Niente più battute di pausa quando la melodia suona ma esce dal registro
+  del contrappunto. Prima, se la melodia saliva (o scendeva) tanto da non
+  lasciare spazio, la voce taceva. Ora in quelle battute passa dall'altra
+  parte della melodia (scambio delle parti), dentro l'estensione dello
+  strumento, e torna al suo posto appena c'è spazio. Sul brano di prova con il
+  flauto le pause sotto la melodia scendono dal 19% al 2% del brano, senza
+  parallele.
+
+### Miglioramenti
+- Il culmine viene posto nella frase della parte centrale in cui la voce può
+  davvero salire più in alto, tenendo conto dello scambio delle parti. Le
+  linee che non lo raggiungono scendono in classifica.
+- La finestra indica in quante battute la voce ha cambiato lato.
+
 ## 2.3.0
 
 ### Novità

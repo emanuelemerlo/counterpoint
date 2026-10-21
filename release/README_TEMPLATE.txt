@@ -144,6 +144,8 @@ Consigli
    nella frase centrale del brano.
  * Dove melodia e accompagnamento sono molto vicini il contrappunto può
    fare brevi pause per evitare quinte od ottave parallele.
+ * Dove la melodia esce dal registro della voce, la voce passa dall'altra
+   parte della melodia (scambio delle parti) per quelle battute.
 
 
 ------------------------------------------------------------------------------

@@ -122,6 +122,10 @@ aprire e ascoltare in MuseScore.
 - Nei passaggi in cui melodia e accompagnamento sono molto vicini (per esempio
   un arpeggio condiviso tra le mani) il contrappunto può fare brevi pause per
   evitare quinte od ottave parallele.
+- Dove la melodia esce dal registro della voce, la voce passa dall'altra parte
+  della melodia (scambio delle parti) per quelle battute; con la posizione
+  "sopra la melodia" senza strumento, in qualche seme il culmine può non cadere
+  nella frase centrale (la classifica delle varianti lo mostra).
 
 ## Release
 
