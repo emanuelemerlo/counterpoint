@@ -52,7 +52,7 @@ function makeScore(spec) {
     S.appendPart = function (id) {
         S.log.push("appendPart(" + id + ")");
         var s0 = addStaff(id, null);
-        S.parts.push({ partName: id, longName: id, startTrack: s0 * 4, endTrack: s0 * 4 + 4 });
+        S.parts.push({ partName: id, longName: id, instrumentId: id, startTrack: s0 * 4, endTrack: s0 * 4 + 4 });
     };
     S.startCmd = function () { S.log.push("startCmd"); };
     S.endCmd = function (rb) { S.log.push("endCmd" + (rb ? "(rollback)" : "")); };

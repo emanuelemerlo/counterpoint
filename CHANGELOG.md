@@ -4,6 +4,21 @@ Ogni sezione `## X.Y.Z` diventa le note della release con lo stesso numero
 (tag `vX.Y.Z`) e la prima parte del file README.TXT incluso nello zip.
 Il numero deve coincidere con `version:` in `plugin/Contrappunto/contrappunto.qml`.
 
+## 2.2.0
+
+### Novità
+- Il contrappunto rispetta l'estensione dello strumento che lo suona: quello
+  scelto per il nuovo rigo oppure quello del rigo esistente di destinazione.
+  Nessuna nota esce dall'estensione.
+- Se il registro previsto non ci sta (per esempio una voce intermedia
+  affidata al flauto), il plugin prima cambia ruolo alla voce, portandola
+  sopra o sotto la melodia, poi, se serve, la sposta di ottava. In entrambi i
+  casi ricalcola la linea con le regole della nuova posizione, invece di
+  trasporre semplicemente le note: nei rivolti una quinta diventerebbe una
+  quarta.
+- La finestra indica l'estensione usata e l'eventuale cambio di ruolo o di
+  ottava.
+
 ## 2.1.1
 
 ### Correzioni

@@ -31,6 +31,7 @@ var DEFAULTS = {
     imitation: true,        // eco del motivo nelle pause della melodia
     variety: 3,             // 0..10, casualità controllata
     seed: 1,
+    instrument: null,       // { lo, hi } estensione MIDI (suoni reali) dello strumento di destinazione
     beam: 48,
     sameStaff: false        // melodia e basso letti dallo stesso rigo
 };
@@ -307,6 +308,8 @@ function generate(input) {
     report.key = C.keyName;
     report.role = C.role;
     report.range = [C.lo, C.hi];
+    report.rangeShift = C.rangeShift;      // ottave di spostamento per l'estensione dello strumento
+    report.roleBefore = C.roleBefore;
     report.events = events.length;
     report.notes = items.filter(function (x) { return x.midi !== null; }).length;
     report.quality = Math.round(C.quality * 100) / 100;
@@ -348,7 +351,7 @@ function chooseRange(C) {
     var bm = C.hasBass ? weightedMedian(C.bassLine) : null;
     var pos = C.opt.position, reg = C.opt.register;
     var presets = { soprano: [60, 81], alto: [53, 74], tenor: [48, 69], bass: [40, 62] };
-    var role, lo, hi;
+    var role;
     if (pos === "auto") {
         if (presets[reg]) {
             var cen = (presets[reg][0] + presets[reg][1]) / 2;
@@ -359,16 +362,55 @@ function chooseRange(C) {
     if (role === "middle" && !C.hasBass) role = "below";
     if (role === "below" && C.hasBass) role = "middle";
 
-    if (presets[reg]) { lo = presets[reg][0]; hi = presets[reg][1]; }
-    else if (role === "above") { lo = mm - 2; hi = mm + 14; }
-    else if (role === "middle") {
-        var c = Math.round((mm + bm) / 2);
-        lo = Math.max(c - 8, bm + 3); hi = Math.min(c + 8, mm + 1);
-        if (hi - lo < 12) { lo = c - 6; hi = c + 6; }
-    } else { lo = mm - 19; hi = mm - 1; }
-    lo = Math.max(lo, 36); hi = Math.min(hi, 91);
-    if (hi - lo < 10) hi = lo + 12;
-    C.role = role; C.lo = lo; C.hi = hi; C.melMed = mm; C.bassMed = bm;
+    function rangeFor(r) {
+        var lo, hi;
+        if (presets[reg]) { lo = presets[reg][0]; hi = presets[reg][1]; }
+        else if (r === "above") { lo = mm - 2; hi = mm + 14; }
+        else if (r === "middle") {
+            var c = Math.round((mm + bm) / 2);
+            lo = Math.max(c - 8, bm + 3); hi = Math.min(c + 8, mm + 1);
+            if (hi - lo < 12) { lo = c - 6; hi = c + 6; }
+        } else { lo = mm - 19; hi = mm - 1; }
+        lo = Math.max(lo, 36); hi = Math.min(hi, 91);
+        if (hi - lo < 10) hi = lo + 12;
+        return [lo, hi];
+    }
+    var rg = rangeFor(role), roleBefore = role, shift = 0;
+
+    // Estensione dello strumento di destinazione. Se il registro non ci sta:
+    // 1) cambio ruolo alla voce (intermedia <-> sopra la melodia, sotto <-> sopra)
+    //    e uso il registro naturale del nuovo ruolo;
+    // 2) se ancora non basta, sposto il registro di ottava;
+    // 3) in ogni caso nessuna nota esce dall'estensione.
+    var ins = C.opt.instrument;
+    if (ins && ins.lo > 0 && ins.hi > ins.lo) {
+        var fits = function (r) { return Math.min(r[1], ins.hi) - Math.max(r[0], ins.lo) >= Math.min(12, ins.hi - ins.lo); };
+        if (!fits(rg) && !presets[reg]) {
+            var up = (rg[0] + rg[1]) / 2 < (ins.lo + ins.hi) / 2;
+            var alt = up ? "above" : (C.hasBass ? "middle" : "below");
+            if (alt !== role) { var rg2 = rangeFor(alt); if (fits(rg2) || Math.abs((rg2[0] + rg2[1]) - (ins.lo + ins.hi)) < Math.abs((rg[0] + rg[1]) - (ins.lo + ins.hi))) { role = alt; rg = rg2; } }
+        }
+        if (!fits(rg)) {
+            var bestOv = -1e9;
+            for (var k = -3; k <= 3; k++) {
+                var ov = Math.min(rg[1] + 12 * k, ins.hi) - Math.max(rg[0] + 12 * k, ins.lo);
+                if (ov > bestOv || (ov === bestOv && Math.abs(k) < Math.abs(shift))) { bestOv = ov; shift = k; }
+            }
+            rg = [rg[0] + 12 * shift, rg[1] + 12 * shift];
+            var cen2 = (rg[0] + rg[1]) / 2;     // il ruolo segue la posizione rispetto alla melodia
+            if (shift !== 0) role = cen2 > mm ? "above" : (C.hasBass ? "middle" : "below");
+        }
+        var lo = Math.max(rg[0], ins.lo), hi = Math.min(rg[1], ins.hi);
+        if (hi - lo < 12) {                     // registro troppo stretto: allargo dentro l'estensione
+            var mid = (lo + hi) / 2;
+            lo = Math.max(ins.lo, Math.round(mid - 7));
+            hi = Math.min(ins.hi, lo + 14);
+            lo = Math.max(ins.lo, Math.min(lo, hi - 14));
+        }
+        rg = [lo, hi];
+    }
+    C.rangeShift = shift; C.roleBefore = roleBefore;
+    C.role = role; C.lo = rg[0]; C.hi = rg[1]; C.melMed = mm; C.bassMed = bm;
     C.candCache = {};
 }
 

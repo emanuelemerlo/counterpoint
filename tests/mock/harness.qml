@@ -52,6 +52,10 @@ Item {
         var p = ld.item;
         if (phase === 1) {
             first = dump(2, 0);
+            var vt = score.tracks[8];
+            for (var q = 0; q < vt.length; q++)
+                if (vt[q].type === 93 && (vt[q].notes[0].pitch < 55 || vt[q].notes[0].pitch > 88)) fail("nota fuori estensione del violino: " + vt[q].notes[0].pitch);
+            console.log("estensione violino rispettata");
             console.log("log: " + score.log.join(", ") + "  cmd: " + p.cmdLog.join(","));
             console.log("nuovo rigo: " + first);
             phase = 2;

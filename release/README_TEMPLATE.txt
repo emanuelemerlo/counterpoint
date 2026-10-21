@@ -31,6 +31,9 @@ voce di un rigo esistente.
  * Linea melodica: prevalenza di gradi congiunti, salti recuperati per moto
    contrario, un solo culmine, preferenza per il moto contrario, cadenze
    raggiunte per grado.
+ * Estensione dello strumento: le note restano sempre dentro l'estensione
+   dello strumento di destinazione; se serve la voce cambia posizione
+   (sopra/sotto la melodia) o ottava, ricalcolando la linea.
  * Riconoscimento automatico di tonalità, modo (maggiore/minore) e metro
    (semplice/composto), anche con cambi di armatura.
  * Imitazione: nelle pause della melodia il contrappunto riprende il suo

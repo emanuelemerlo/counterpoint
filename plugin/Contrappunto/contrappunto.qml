@@ -14,7 +14,7 @@ MuseScore {
     id: plugin
     title: "Contrappunto automatico"
     description: "Genera una contro-melodia in contrappunto (nota contro nota, 2:1, 4:1, ritardi, fiorito o libero) e la inserisce in un rigo esistente o in un nuovo rigo. Può calcolare più varianti e ordinarle per qualità."
-    version: "2.1.1"
+    version: "2.2.0"
     categoryCode: "composing-arranging-tools"
     pluginType: "dialog"
     requiresScore: true
@@ -44,12 +44,19 @@ MuseScore {
                                            "Sotto la melodia, sopra il basso (tenore)", "Sotto la melodia, come basso"]
     readonly property var registerValues: ["auto", "soprano", "alto", "tenor", "bass"]
     readonly property var registerLabels: ["Automatico", "Soprano (Do4–La5)", "Contralto (Fa3–Re5)", "Tenore (Do3–La4)", "Basso (Mi2–Re4)"]
+    // estensioni comode (suoni reali, MIDI): il contrappunto resta sempre dentro
     readonly property var instruments: [
-        { label: "Violino", id: "violin" }, { label: "Flauto", id: "flute" }, { label: "Oboe", id: "oboe" },
-        { label: "Viola", id: "viola" }, { label: "Violoncello", id: "violoncello" }, { label: "Fagotto", id: "bassoon" },
-        { label: "Voce – Soprano", id: "soprano" }, { label: "Voce – Contralto", id: "alto" },
-        { label: "Voce – Tenore", id: "tenor" }, { label: "Voce – Basso", id: "bass" },
-        { label: "Pianoforte", id: "piano" }
+        { label: "Violino", id: "violin", lo: 55, hi: 88 },        // Sol3–Mi6
+        { label: "Flauto", id: "flute", lo: 60, hi: 93 },          // Do4–La6
+        { label: "Oboe", id: "oboe", lo: 58, hi: 86 },             // Sib3–Re6
+        { label: "Viola", id: "viola", lo: 48, hi: 81 },           // Do3–La5
+        { label: "Violoncello", id: "violoncello", lo: 36, hi: 72 }, // Do2–Do5
+        { label: "Fagotto", id: "bassoon", lo: 34, hi: 70 },       // Sib1–Sib4
+        { label: "Voce – Soprano", id: "soprano", lo: 60, hi: 81 },
+        { label: "Voce – Contralto", id: "alto", lo: 53, hi: 74 },
+        { label: "Voce – Tenore", id: "tenor", lo: 48, hi: 69 },
+        { label: "Voce – Basso", id: "bass", lo: 40, hi: 62 },
+        { label: "Pianoforte", id: "piano", lo: 21, hi: 108 }
     ]
 
     // ------------------------------------------------------------------ tema
@@ -376,7 +383,46 @@ MuseScore {
                "Tonalità " + r.key + ", " + roleName + ". Gradi congiunti " + r.steps + ", salti " + r.leaps +
                ", moto contrario " + r.contrary + ", simile " + r.similar + ".\n" +
                (r.parallels ? ("Attenzione: " + r.details.join("; ")) : "Nessuna quinta o ottava parallela.") +
-               (r.climaxCount === 1 ? " Un solo culmine." : "");
+               (r.climaxCount === 1 ? " Un solo culmine." : "") + rangeNote(c);
+    }
+    function rangeNote(c) {
+        var r = c.res.report, ins = c.ins;
+        if (!ins) return "";
+        var roles = { above: "sopra la melodia", middle: "come voce intermedia", below: "sotto la melodia" };
+        var txt = "\nEstensione " + ins.name + " (" + midiName(ins.lo) + "–" + midiName(ins.hi) + ") rispettata: note " +
+                  midiName(r.range[0]) + "–" + midiName(r.range[1]) + ".";
+        if (r.roleBefore !== r.role) txt += " Per stare nell'estensione la voce va " + roles[r.role] + ".";
+        if (r.rangeShift) txt += " Registro spostato di " + Math.abs(r.rangeShift) + (Math.abs(r.rangeShift) === 1 ? " ottava " : " ottave ") +
+                                 (r.rangeShift > 0 ? "sopra." : "sotto.");
+        return txt;
+    }
+
+    // ------------------------------------------------------------------ estensione dello strumento
+    readonly property var pcNames: ["Do", "Do#", "Re", "Mib", "Mi", "Fa", "Fa#", "Sol", "Lab", "La", "Sib", "Si"]
+    function midiName(m) { return pcNames[m % 12] + (Math.floor(m / 12) - 1); }
+
+    // Estensione (suoni reali) dello strumento che suonerà il contrappunto, o null
+    function targetRange(toNew, staffIdx) {
+        if (toNew) {
+            var ins = instruments[instrumentCombo.currentIndex];
+            return { lo: ins.lo, hi: ins.hi, name: ins.label };
+        }
+        try {
+            for (var p = 0; p < curScore.parts.length; p++) {
+                var part = curScore.parts[p];
+                if (staffIdx < Math.floor(part.startTrack / 4) || staffIdx >= Math.floor(part.endTrack / 4)) continue;
+                // strumento noto: stessa estensione usata quando il rigo è stato creato (risultato ripetibile)
+                var id = "";
+                try { id = part.instrumentId || ""; } catch (e1) {}
+                for (var k = 0; k < instruments.length; k++)
+                    if (id && id === instruments[k].id)
+                        return { lo: instruments[k].lo, hi: instruments[k].hi, name: instruments[k].label };
+                var lo = part.minPitchA, hi = part.maxPitchA;              // estensione "amatoriale" (comoda)
+                if (!(lo > 0 && hi > lo)) { lo = part.minPitchP; hi = part.maxPitchP; }
+                if (lo > 0 && hi > lo) return { lo: lo, hi: hi, name: part.partName || part.longName || "strumento" };
+            }
+        } catch (e) { console.log("Contrappunto: estensione non letta: " + e); }
+        return null;
     }
 
     // ------------------------------------------------------------------ azione principale
@@ -416,7 +462,8 @@ MuseScore {
                 meter: ["auto", "simple", "compound"][meterCombo.currentIndex],
                 imitation: imitationCheck.checked,
                 variety: varietySlider.value,
-                sameStaff: melStaff === bassStaff
+                sameStaff: melStaff === bassStaff,
+                instrument: targetRange(toNew || (n > 1 && separateCheck.checked), tStaff)
             },
             n: n, i: 0, seed0: seedSpin.value, results: [],
             toNew: toNew, tStaff: tStaff, tVoice: tVoice,
@@ -443,7 +490,7 @@ MuseScore {
         var seed = seedFor(j.seed0, j.i);
         inp.options.seed = seed;
         try {
-            j.results.push({ seed: seed, res: Engine.generate(inp) });
+            j.results.push({ seed: seed, res: Engine.generate(inp), ins: j.options.instrument });
         } catch (e) {
             busy = false;
             setStatus("Errore nel calcolo: " + e, "error");
