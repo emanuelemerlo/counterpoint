@@ -41,6 +41,8 @@ same section must also exist in `CHANGELOG.it.md` (Italian).
   placeholder, no text left out of the translation.
 
 ### Fixes
+- If the automatic check of a variant could not run, the variant was shown
+  with «0 errors, 0 warnings»: the window now says that the check failed.
 - The plugin test with the fake MuseScore printed «RESULT OK» even after a
   failed check: it now fails as it should.
 

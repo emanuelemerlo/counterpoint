@@ -360,7 +360,10 @@ function generate(input) {
         report.errors = chk.report.errors;
         report.warnings = chk.report.warnings;
         report.figures = chk.report.figures;
-    } catch (e) { report.findings = []; report.errors = 0; report.warnings = 0; }
+    } catch (e) {
+        // il controllo non deve mai bloccare la generazione, ma non deve nemmeno sembrare superato
+        report.findings = []; report.errors = 0; report.warnings = 0; report.checkError = String(e);
+    }
     report.entry = C.entry ? entryReport(C, events, path) : null;
     report.signature = items.map(function (x) { return x.tick + ":" + x.ticks + ":" + x.midi; }).join(",");
     return { items: items, report: report, events: events, path: path };
@@ -391,7 +394,6 @@ function detectKeys(C, keys) {
     }
     C.mode = mode;
     C.keys = ks.map(function (x) { return { t: x.tick, key: makeKey(x.sharps, mode) }; });
-    C.keyName = C.keys[0].key.name;
 }
 function keyAt(C, t) { var i = bsearch(C.keys, t); return C.keys[i < 0 ? 0 : i].key; }
 

@@ -9,7 +9,7 @@ var STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 var LET = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
 var LET_TPC = [14, 16, 18, 13, 15, 17, 19];
 
-// "C5:q D#4:e r:h"  ->  eventi { tick, dur, notes }
+// "C5:q D#4:e r:h"  ->  events { tick, dur, notes }
 function parse(str, start) {
     var t = start || 0, out = [];
     str.trim().split(/\s+/).forEach(function (tok) {
@@ -62,7 +62,7 @@ var seed = parseInt(process.argv[2] || "7");
 var species = (process.argv[3] || "free,florid,2:1,4:1,sus,1:1").split(",");
 var totalPar = 0, failures = [];
 function check(ok, msg) { if (!ok) { failures.push(msg); console.log("  FALLITO: " + msg); } }
-// rilievi dell'analisi che il generatore non deve mai produrre
+// analysis findings the generator must never produce
 var NEVER = { parallel5: 1, parallel8: 1, dissonance: 1, suspension: 1, crossing: 1 };
 CASES.forEach(function (cs) {
     var m = parse(cs.mel), b = cs.bass ? parse(cs.bass) : { events: [], end: 0 };

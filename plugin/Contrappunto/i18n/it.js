@@ -148,6 +148,7 @@ var LANG = {
         "parallel.octaves": "ottave parallele",
 
         "extras.check": "Controllo con le regole dell'analisi: {counts}.",
+        "extras.checkFailed": "Il controllo con le regole dell'analisi non è riuscito ({msg}): segnalalo, per favore.",
         "extras.figures": " Figure: {list}.",
         "fig.suspension": { one: "1 ritardo", other: "{n} ritardi" },
         "fig.cambiata": { one: "1 cambiata", other: "{n} cambiate" },

@@ -148,6 +148,7 @@ var LANG = {
         "parallel.octaves": "parallel octaves",
 
         "extras.check": "Check with the analysis rules: {counts}.",
+        "extras.checkFailed": "The check with the analysis rules could not run ({msg}): please report it.",
         "extras.figures": " Figures: {list}.",
         "fig.suspension": { one: "1 suspension", other: "{n} suspensions" },
         "fig.cambiata": { one: "1 cambiata", other: "{n} cambiatas" },

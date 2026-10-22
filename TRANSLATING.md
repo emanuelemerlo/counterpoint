@@ -24,7 +24,7 @@ time – the plugin falls back to English for anything that is missing.
 3. Register the language in `plugin/Contrappunto/i18n/i18n.js`: add
    `.import "xx.js" as Xx` next to the other imports and `Xx.LANG` to
    `LANGUAGES`.
-4. Run the check: `node tests/check_i18n.js` (Node.js 18 or later). It tells
+4. Run the check: `node tests/check_i18n.js` (Node.js 22 or later). It tells
    you about missing keys, placeholders and plural forms.
 5. Try it in MuseScore: copy the `plugin/Contrappunto` folder into your
    plugins folder as `contrappunto`, restart MuseScore, open the plugin and

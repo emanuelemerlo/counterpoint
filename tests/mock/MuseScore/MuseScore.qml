@@ -1,5 +1,5 @@
 import QtQuick 2.15
-// Finto tipo MuseScore per il collaudo fuori dall'applicazione
+// Fake MuseScore type, to test the plugin outside the application
 Item {
     property string title
     property string description

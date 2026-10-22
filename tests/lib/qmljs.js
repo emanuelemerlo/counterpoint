@@ -1,5 +1,5 @@
-// Carica in node i file JavaScript del plugin scritti per QML (".pragma library",
-// ".import "x.js" as X"), come li vede MuseScore. Ogni file esporta con module.exports.
+// Loads in node the plugin's JavaScript files written for QML (".pragma library",
+// ".import "x.js" as X"), as MuseScore sees them. Each file exports with module.exports.
 var fs = require("fs"), path = require("path");
 var cache = {};
 function load(file) {

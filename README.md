@@ -170,6 +170,11 @@ avoid painting itself into a corner. The new engine:
   the start of the run); a single climax, planned in a phrase around 60% of the
   piece (the top of the register is reserved for that phrase); a brake on
   figures repeated bar after bar.
+- **Beginning and end** (species exercises): with strict rules the
+  counterpoint begins on a perfect consonance (octave, fifth or unison; below
+  the cantus firmus only octave or unison), and in every species it ends with
+  one long note under the melody's last note. Florid mixes quarter notes,
+  eighth-note pairs and longer held notes.
 - **Phrases and cadences**: it finds the phrase endings (long notes on strong
   beats, notes followed by rests) and asks there for chord notes reached by
   step; the final falls on a note of the tonic chord (on the tonic if the

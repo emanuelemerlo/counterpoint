@@ -164,6 +164,11 @@ evitare di chiudersi in un vicolo cieco. Il motore nuovo:
   il punto di partenza del tratto); un solo culmine, pianificato in una frase
   intorno al 60% del brano (la zona più acuta del registro è riservata a quella
   frase); freno alle ripetizioni di figure battuta dopo battuta.
+- **Inizio e fine** (esercizi di specie): con le regole rigorose il
+  contrappunto comincia su una consonanza perfetta (ottava, quinta o unisono;
+  sotto il canto dato solo ottava o unisono), e in tutte le specie finisce con
+  una sola nota lunga sotto l'ultima nota della melodia. Il fiorito mescola
+  semiminime, coppie di crome e note tenute più lunghe.
 - **Frasi e cadenze**: individua gli arrivi di frase (note lunghe su tempo forte,
   note seguite da pause) e richiede lì note dell'accordo raggiunte per grado; il
   finale cade su una nota dell'accordo di tonica (sulla tonica se il contrappunto

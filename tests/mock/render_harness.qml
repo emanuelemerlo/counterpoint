@@ -8,6 +8,7 @@ Item {
     property string pluginUrl
     property string lang: "en"
     property string scene: "variants"
+    property int seed: 1615              // fixed: same variants in every language, pages can describe them
     property var score
     signal done()
     Loader { id: ld; anchors.fill: parent; source: h.pluginUrl; onLoaded: Qt.callLater(h.go) }
@@ -29,6 +30,7 @@ Item {
             Qt.callLater(h.done);
         } else {
             p.setVariants(5, false);
+            p.setSeed(h.seed);
             p.generate();
         }
     }
