@@ -1,0 +1,51 @@
+# Publishes docs/wiki/ to the repository's GitHub Wiki.
+#
+# The pages are written and reviewed in the repository like everything else;
+# on every push to main that touches docs/wiki/ this workflow copies them to the
+# Wiki (a separate git repository, <repo>.wiki.git), replacing what is there.
+#
+# The first time, GitHub needs the Wiki to exist: open the repository's Wiki tab,
+# create any page (it will be replaced), then run this workflow by hand
+# (Actions → Wiki → Run workflow).
+name: Wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/wiki/**", ".github/workflows/wiki.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the pages (links, images, languages)
+        run: python3 tests/check_wiki.py
+
+      - name: Publish to the GitHub Wiki
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          url="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          if ! git clone --depth 1 "$url" wiki 2>/dev/null; then
+            echo "::warning::The Wiki does not exist yet: open the Wiki tab of the repository, create any first page, then run this workflow again (Actions → Wiki → Run workflow)."
+            exit 0
+          fi
+          rsync -a --delete --exclude .git docs/wiki/ wiki/
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "The Wiki is already up to date"; exit 0; fi
+          git commit -q -m "Wiki from ${GITHUB_SHA::7}"
+          git push -q
+          echo "Published: https://github.com/${GITHUB_REPOSITORY}/wiki"

@@ -1,0 +1,212 @@
+==============================================================================
+ CONTRAPPUNTO - plugin for MuseScore 4
+ Writes, compares and checks counterpoint
+ Version {VERSION} - {DATE}
+==============================================================================
+
+Writes a counter-melody in counterpoint for a melody (cantus firmus) and,
+if there is one, a bass, on a new staff or in a voice of an existing staff.
+It also checks a voice written by hand with the same rules and regenerates a
+variant around the notes you want to keep.
+
+Italiano: vedi LEGGIMI.TXT nella stessa cartella.
+
+Step-by-step guides and a short introduction to counterpoint for people who
+have never studied it: {WIKI_URL}
+
+
+------------------------------------------------------------------------------
+ RELEASE NOTES {VERSION}
+------------------------------------------------------------------------------
+
+{NOTES}
+
+
+------------------------------------------------------------------------------
+ FEATURES
+------------------------------------------------------------------------------
+
+ * Species of counterpoint: free (rhythm complementary to the melody),
+   1:1 note against note, 2:1, 4:1, suspensions (4th species), florid
+   (5th species).
+ * Position: above the melody, inner voice between melody and bass, or as
+   the bass (when there is no bass).
+ * Strict (academic) or free rules (appoggiaturas, dominant sevenths,
+   hidden fifths and octaves tolerated).
+ * Correctness: no parallel fifths or octaves; dissonances only as passing
+   or neighbour notes, prepared suspensions or dominant sevenths; no voice
+   crossing; leading note not doubled.
+ * Melodic line: mostly stepwise, leaps recovered by contrary motion, a
+   single climax (in the phrase around 60% of the piece), preference for
+   contrary motion, cadences approached by step.
+ * Instrument range: notes always stay within the range of the destination
+   instrument; if needed the voice changes position (above/below the
+   melody) or octave, recomputing the line.
+ * Altered notes: the counterpoint follows chords outside the key and the
+   accidentals of melody and bass (no cross-relations).
+ * Automatic detection of key, mode (major/minor) and meter
+   (simple/compound), key changes included.
+ * Imitation: in the melody's rests the counterpoint echoes its last motif;
+   optional imitative entry (free and florid).
+ * Third-species figures: cambiata and double neighbour.
+ * No outlined tritones or sevenths; two-voice final cadence.
+ * Analysis of a written voice: errors in red, warnings in orange.
+ * Regenerate the rest: keeps the notes you choose and recomputes the
+   others.
+ * Settings are remembered from one session to the next.
+ * Deterministic result: same settings and same seed always give the same
+   counterpoint.
+ * Several variants ranked by quality, in the same destination or on
+   separate staves.
+ * Interface in English and Italian: it follows MuseScore's language, or
+   you choose it in the window ("Language"). More languages can be added
+   with one file in i18n/.
+ * The window follows MuseScore's light/dark theme.
+ * Every generation is a single operation, undoable with Ctrl+Z.
+
+
+------------------------------------------------------------------------------
+ INSTALLATION
+------------------------------------------------------------------------------
+
+ 1. Unzip: the archive contains the folder "contrappunto" (lower case).
+ 2. Copy the "contrappunto" folder into MuseScore's plugin folder:
+      Windows : Documents\MuseScore4\Plugins\
+      macOS   : ~/Documents/MuseScore4/Plugins/
+      Linux   : ~/Documents/MuseScore4/Plugins/
+    (the folder is also shown in Preferences > Folders > Plugins).
+    When updating from an earlier version, first delete the old folder,
+    even if it is called "Contrappunto" with a capital C (on Linux both
+    folders would stay and the plugin would appear twice), then RESTART
+    MuseScore: while it stays open it keeps using the version loaded at
+    start-up. The version in use is shown next to the title of the
+    plugin's window.
+ 3. In MuseScore: menu Plugins > Manage plugins, enable "Contrappunto"
+    (up to version 2.6 it was called "Contrappunto automatico").
+ 4. The plugin appears in the menu Plugins > Composing/arranging tools.
+
+The folder must contain:
+   contrappunto.qml        interface and connection to the score
+   contrappunto_engine.js  musical engine
+   i18n/                   interface texts, one file per language
+   README.TXT, LEGGIMI.TXT these instructions, in English and Italian
+
+
+------------------------------------------------------------------------------
+ HOW TO USE IT
+------------------------------------------------------------------------------
+
+Writing a counterpoint
+ 1. (Optional) Select a range of bars. Without a selection the plugin
+    works on the whole score. It always works on whole bars.
+ 2. Start the plugin. If you change the selection while the window is
+    open, press "Use current selection".
+ 3. Sources: choose the melody's staff and the bass's staff, or "none" if
+    you only have the cantus firmus. Melody and bass can share a staff:
+    the highest note is the melody, the lowest the bass.
+ 4. Destination: "New staff" (with the chosen instrument) or
+    "Existing staff" + voice (for example voice 2 of the left hand).
+    Voice 1 of a staff that holds the melody or the bass is not allowed.
+ 5. Style: species, position, register, rules, mode and meter.
+ 6. Press "Generate".
+
+Trying other solutions
+ * After the first generation on a new staff, that staff becomes the
+   destination: change the seed ("New seed") and press "Generate" again to
+   replace the result with an alternative.
+ * "Variety" (0-10) decides how far solutions may stray from the most
+   correct one: with 0 every seed gives the same result.
+
+Comparing variants
+ 1. Set "How many" to a value from 2 to 8 and press "Generate N variants".
+ 2. The plugin computes the variants (consecutive seeds, shown next to the
+    field) and lists them from the best. For each one it shows the score,
+    the percentage of stepwise and of contrary motion, the number of
+    climaxes, whether there are parallels and the errors and warnings
+    found by the analysis (with equal parallels, fewer errors come first).
+ 3. The best one is already written in the destination. Click another
+    variant to replace it and hear it; its seed goes into the "Seed" field,
+    so you can find it again later.
+ 4. Or switch on "One variant per new staff": each variant goes to a new
+    staff labelled "Variant N - seed S". Listen, keep the one you like and
+    delete the other staves (or press Ctrl+Z).
+
+Analyzing a voice
+ 1. Under Destination choose "Existing staff" and the voice to check
+    (after a generation on a new staff it is already that staff).
+ 2. Press "Analyze voice". Notes with an error turn red, notes with a
+    warning orange; the list with bar numbers appears in the window.
+ 3. Correct and press "Analyze voice" again: the colours of the previous
+    run are removed. Ctrl+Z removes the colours straight away.
+
+Regenerating the rest
+ 1. In the generated voice, edit by hand the notes you want to keep, or
+    select them with Ctrl+click.
+ 2. Press "Regenerate the rest": those notes stay as they are and all the
+    others are recomputed around them, with the same settings.
+
+Changing language
+ * Top right, "Language": "Automatic" uses MuseScore's language (English
+   if there is no file for that language). The choice is remembered.
+   Switching language also translates the message on screen.
+
+Tips
+ * For a short cantus firmus try 1:1, 2:1 and suspensions; for a whole
+   piece the "Free" species gives the most natural result.
+ * Write down the seed of the variants you like: with the same settings
+   the result is repeated exactly.
+ * If the ties cannot be created, the plugin says so and the notes stay
+   repeated instead of tied.
+
+
+------------------------------------------------------------------------------
+ OPTIONS
+------------------------------------------------------------------------------
+
+ Species / rhythm Free, 1:1, 2:1, 4:1, Suspensions (4th species), Florid (5th)
+ Position         Automatic, above the melody, inner voice, as the bass
+ Register         Automatic, Soprano, Alto, Tenor, Bass
+ Rules            Strict (academic) or Free
+ Mode / Meter     Automatic, or forced
+ Imitation        In the melody's rests it echoes its last motif
+ Imitative entry  (free and florid) Waits while the melody states its
+                  opening, then imitates it at the octave, fifth or fourth
+ Ties             Ties the held notes
+ Variety / Seed   How far from the most correct solution; same seed =
+                  same result
+ How many         Number of variants to compute and rank (1-8)
+ One per staff    Writes each variant on a new staff
+ Language         Automatic (MuseScore's), English, Italiano
+
+
+------------------------------------------------------------------------------
+ KNOWN LIMITATIONS
+------------------------------------------------------------------------------
+
+ * One counterpoint voice at a time.
+ * Triplets and other tuplets in the melody are read, but the
+   counterpoint uses only binary and dotted values.
+ * In 1:1 the climax may be reached two or three times, always in the
+   central phrase of the piece.
+ * Where melody and accompaniment are very close the counterpoint may rest
+   briefly to avoid parallel fifths or octaves.
+ * Where the melody leaves the voice's register, the voice crosses to the
+   other side of the melody (voice exchange) for those bars.
+ * The imitative entry needs at least three notes at the start of the
+   melody; with a bass already written it often imitates only part of the
+   intervals.
+ * "Regenerate the rest" uses the selected notes if your version of
+   MuseScore lets plugins read the selection; otherwise the notes edited by
+   hand.
+
+
+------------------------------------------------------------------------------
+ VERSION HISTORY
+------------------------------------------------------------------------------
+
+{HISTORY}
+
+------------------------------------------------------------------------------
+ Guides (Wiki): {WIKI_URL}
+ Source code and bug reports: {REPO_URL}
+------------------------------------------------------------------------------

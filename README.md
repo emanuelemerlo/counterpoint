@@ -1,217 +1,281 @@
-# Contrappunto automatico per MuseScore 4
+# Contrappunto
 
-Plugin che genera una contro-melodia in contrappunto a partire da una melodia
-(canto dato) e, se presente, da un basso, e la scrive in un **nuovo rigo** oppure
-in una **voce di un rigo esistente** (per esempio la voce 2 della mano sinistra
-del pianoforte). Può anche **analizzare** una voce scritta a mano con le stesse
-regole e **rigenerare** una variante mantenendo le note che hai scelto.
+**Writes, compares and checks counterpoint** – a plugin for MuseScore 4
 
-## Installazione
+**English** · [Italiano](README.it.md)
 
-1. Scarica lo zip dalla pagina delle release ed estrai la cartella
-   `contrappunto` in `Documenti/MuseScore4/Plugins/` (oppure copia lì la
-   cartella `plugin/Contrappunto` del repository, rinominandola `contrappunto`).
-2. In MuseScore: **Plugin → Gestisci plugin**, attiva *Contrappunto automatico*.
-3. Il plugin compare nel menu **Plugin → Composizione/arrangiamento**.
-4. Dopo un aggiornamento **riavvia MuseScore**: finché resta aperto usa la
-   versione caricata all'avvio. La versione in uso è indicata accanto al
-   titolo della finestra del plugin.
+Contrappunto writes a counter-melody in counterpoint for a melody (cantus
+firmus) and, if there is one, a bass, and puts it on a **new staff** or in a
+**voice of an existing staff** (for example voice 2 of the piano's left hand).
+It can also **analyze** a voice written by hand with the same rules and
+**regenerate** a variant around the notes you want to keep. The interface is in
+English and Italian.
 
-La cartella deve contenere entrambi i file: `contrappunto.qml` (interfaccia e
-collegamento con lo spartito) e `contrappunto_engine.js` (motore musicale).
+![The plugin's window](docs/wiki/images/dialog-en.png)
 
-## Uso
+**New to counterpoint?** The Wiki has a [short
+introduction](https://github.com/emanuelemerlo/counterpoint/wiki/Counterpoint-in-a-nutshell)
+and step-by-step guides:
+[Quick start](https://github.com/emanuelemerlo/counterpoint/wiki/Quick-start) ·
+[Choosing a species and style](https://github.com/emanuelemerlo/counterpoint/wiki/Choosing-a-species-and-style) ·
+[Checking an exercise](https://github.com/emanuelemerlo/counterpoint/wiki/Checking-an-exercise) ·
+[All pages](https://github.com/emanuelemerlo/counterpoint/wiki/Home)
 
-1. (Facoltativo) seleziona un intervallo di battute; senza selezione il plugin
-   lavora su tutto lo spartito. Lavora sempre su battute intere.
-2. Avvia il plugin, scegli il rigo della **melodia** e quello del **basso**
-   (oppure "nessuno" se hai solo il canto dato). Melodia e basso possono stare
-   nello stesso rigo: il plugin prende la nota più acuta come melodia e la più
-   grave come basso.
-3. Scegli la destinazione: nuovo rigo (con lo strumento) o rigo esistente + voce.
-4. Imposta lo stile e premi **Genera**. Ogni generazione è un'unica operazione
-   annullabile con Ctrl+Z (le legature di valore sono un secondo passo).
-5. Dopo la prima generazione in un nuovo rigo, quel rigo diventa la destinazione:
-   cambia il **seme** e premi di nuovo Genera per ottenere varianti al posto della
-   precedente.
-6. Per confrontare più soluzioni imposta **Quante** (fino a 8): il plugin calcola
-   le varianti con semi consecutivi e le ordina per qualità (prima quelle senza
-   parallele, poi quelle con meno errori, poi il punteggio delle regole). La migliore viene scritta nella
-   destinazione; clic su un'altra variante dell'elenco per sostituirla (ogni
-   sostituzione è annullabile con Ctrl+Z e il suo seme passa nel campo Seme).
-   Con **Una variante per rigo nuovo** ogni variante finisce in un rigo a sé,
-   con un'etichetta, per ascoltarle a confronto. Accanto a ogni variante ci sono
-   gli errori e gli avvisi trovati dall'analisi (vedi sotto).
+## Installation
 
-### Analizzare una voce
+1. Download `Contrappunto-X.Y.Z.zip` from the [releases page](https://github.com/emanuelemerlo/counterpoint/releases)
+   and extract the `contrappunto` folder into `Documents/MuseScore4/Plugins/`
+   (or copy the repository's `plugin/Contrappunto` folder there, renaming it
+   `contrappunto`).
+2. In MuseScore: **Plugins → Manage plugins**, enable *Contrappunto*.
+3. The plugin appears in the menu **Plugins → Composing/arranging tools**.
+4. After an update **restart MuseScore**: while it stays open it keeps using
+   the version loaded at start-up. The version in use is shown next to the
+   title of the plugin's window. When updating from an earlier version, first
+   delete the old folder (even if it is called `Contrappunto` with a capital
+   C); up to 2.6 the plugin was called «Contrappunto automatico».
 
-**Analizza la voce** controlla la voce di destinazione (*Rigo esistente* + voce;
-dopo una generazione in un nuovo rigo è quel rigo) rispetto a melodia e basso,
-con le regole del motore: quinte e ottave parallele, dirette, dissonanze non
-preparate o non risolte, ritardi che non scendono, salti non ammessi, salti non
-recuperati, tritoni e settime delineati, incroci, sensibile raddoppiata o non
-risolta, false relazioni, culmine ripetuto, finale. Le note con un errore
-diventano rosse, quelle con un avviso arancioni, e l'elenco con i numeri di
-battuta compare nella finestra. Una nuova analisi toglie prima i colori della
-precedente; Ctrl+Z li toglie subito. Serve per controllare un esercizio scritto
-a mano o per capire perché una variante ha degli avvisi.
+The folder must contain `contrappunto.qml` (interface and connection to the
+score), `contrappunto_engine.js` (musical engine) and the `i18n/` folder
+(interface texts, one file per language). Details on the Wiki's
+[Installation](https://github.com/emanuelemerlo/counterpoint/wiki/Installation) page.
 
-### Rigenerare il resto
+## Usage
 
-Se una variante ti piace solo in parte, cambia a mano le note che vuoi (oppure
-selezionale con Ctrl+clic) nella voce di destinazione e premi **Rigenera il
-resto**: le note selezionate, o in mancanza di selezione quelle cambiate rispetto
-alla variante scritta dal plugin, restano com'erano (altezza, grafia e durata) e
-tutto il resto viene ricalcolato intorno a loro, con le stesse impostazioni. Le
-note mantenute possono anche violare una regola: il plugin le rispetta e lo
-segnala nel controllo. Le note mantenute la volta precedente restano mantenute
-finché non le cambi.
+1. (Optional) select a range of bars; without a selection the plugin works on
+   the whole score. It always works on whole bars.
+2. Start the plugin, choose the **melody**'s staff and the **bass**'s staff
+   (or "none" if you only have the cantus firmus). Melody and bass can share a
+   staff: the plugin takes the highest note as the melody and the lowest as
+   the bass.
+3. Choose the destination: new staff (with the instrument) or existing staff +
+   voice.
+4. Set the style and press **Generate**. Every generation is a single
+   operation, undoable with Ctrl+Z (ties are a second step).
+5. After the first generation on a new staff, that staff becomes the
+   destination: change the **seed** and press Generate again to get variants
+   in place of the previous one.
+6. To compare several solutions set **How many** (up to 8): the plugin
+   computes the variants with consecutive seeds and ranks them by quality
+   (first those without parallels, then those with fewer errors, then by rule
+   score). The best one is written to the destination; click another variant
+   in the list to replace it (each replacement can be undone with Ctrl+Z and
+   its seed goes into the Seed field). With **One variant per new staff** each
+   variant goes to a staff of its own, with a label, to compare them by ear.
+   Next to each variant are the errors and warnings found by the analysis
+   (see below).
 
-### Impostazioni ricordate
+### Analyzing a voice
 
-Specie, posizione, registro, regole, opzioni, varietà, numero di varianti,
-strumento e destinazione vengono ricordati da una volta all'altra. Se la
-versione di MuseScore non offre il modulo `Settings` di Qt, il plugin funziona
-lo stesso, ripartendo ogni volta dai valori predefiniti.
+**Analyze voice** checks the destination voice (*Existing staff* + voice;
+after a generation on a new staff it is that staff) against melody and bass,
+with the engine's rules: parallel fifths and octaves, hidden fifths and
+octaves, unprepared or unresolved dissonances, suspensions that do not resolve
+down, forbidden leaps, unrecovered leaps, outlined tritones and sevenths, voice
+crossings, doubled or unresolved leading note, cross-relations, repeated
+climax, final note. Notes with an error turn red, notes with a warning orange,
+and the list with bar numbers appears in the window. A new analysis first
+removes the colours of the previous one; Ctrl+Z removes them straight away.
+Use it to check an exercise written by hand or to understand why a variant has
+warnings.
 
-La finestra usa i colori del tema di MuseScore (chiaro, scuro, alto contrasto) e,
-se non sono disponibili, quelli del sistema.
+### Regenerating the rest
 
-### Opzioni
+If you like a variant only in part, edit the notes you want by hand (or select
+them with Ctrl+click) in the destination voice and press **Regenerate the
+rest**: the selected notes, or without a selection the ones changed since the
+plugin wrote the variant, stay as they are (pitch, spelling and duration) and
+everything else is recomputed around them, with the same settings. Kept notes
+may even break a rule: the plugin respects them and reports it in the check.
+Notes kept the previous time stay kept until you change them.
 
-| Opzione | Valori |
+### Language
+
+Top right, **Language**: *Automatic* uses MuseScore's interface language
+(English if there is no file for that language), or choose English or
+Italiano. Note names follow the language (C D E / Do Re Mi). Switching
+language also translates the message on screen. To add a language see
+[TRANSLATING.md](TRANSLATING.md).
+
+### Remembered settings
+
+Language, species, position, register, rules, options, variety, number of
+variants, instrument and destination are remembered from one session to the
+next. If your version of MuseScore does not offer Qt's `Settings` module, the
+plugin works anyway, starting from the defaults each time.
+
+The window uses the colours of MuseScore's theme (light, dark, high contrast)
+or, if not available, the system's.
+
+### Options
+
+| Option | Values |
 |---|---|
-| Specie / ritmo | Libero (ritmo complementare alla melodia), 1:1, 2:1, 4:1, Ritardi (4ª specie), Fiorito (5ª specie) |
-| Posizione | Automatica, sopra la melodia, voce intermedia (sotto la melodia, sopra il basso), come basso (solo senza basso) |
-| Registro | Automatico, Soprano, Contralto, Tenore, Basso |
-| Regole | Rigorose (accademiche) oppure libere (appoggiature, settime di dominante, dirette tollerate) |
-| Modo / Metro | Automatici, oppure forzati (maggiore/minore, semplice/composto) |
-| Imitazione | Nelle pause della melodia il contrappunto riprende il suo ultimo motivo |
-| Entrata in imitazione | Solo libero e fiorito: il contrappunto tace mentre la melodia espone il suo inizio (una battuta, o due o mezza se serve), poi lo riprende all'ottava, alla quinta o alla quarta (nelle regole libere anche alla terza o alla sesta) |
-| Varietà e seme | Quanto il risultato può discostarsi dalla soluzione "più corretta"; stesso seme = stesso risultato |
-| Quante / una per rigo | Numero di varianti da calcolare e ordinare; facoltativamente una per rigo nuovo |
+| Species / rhythm | Free (rhythm complementary to the melody), 1:1, 2:1, 4:1, Suspensions (4th species), Florid (5th species) |
+| Position | Automatic, above the melody, inner voice (below the melody, above the bass), as the bass (only without a bass) |
+| Register | Automatic, Soprano, Alto, Tenor, Bass |
+| Rules | Strict (academic) or free (appoggiaturas, dominant sevenths, hidden fifths tolerated) |
+| Mode / Meter | Automatic, or forced (major/minor, simple/compound) |
+| Imitation | In the melody's rests the counterpoint echoes its last motif |
+| Imitative entry | Free and florid only: the counterpoint waits while the melody states its opening (one bar, or two or half if needed), then imitates it at the octave, fifth or fourth (with free rules also at the third or sixth) |
+| Variety and seed | How far the result may stray from the "most correct" solution; same seed = same result |
+| How many / one per staff | Number of variants to compute and rank; optionally one per new staff |
+| Language | Automatic (MuseScore's), English, Italiano |
 
-## Come funziona il motore
+Every option is explained with examples on the Wiki's
+[Options reference](https://github.com/emanuelemerlo/counterpoint/wiki/Options-reference)
+page, every analysis finding in
+[Analysis rules](https://github.com/emanuelemerlo/counterpoint/wiki/Analysis-rules).
 
-Lo script Python di partenza (in `legacy/`) sceglieva **una nota alla volta**
-(scelta "golosa"): non poteva preparare un ritardo, risolvere una dissonanza o
-evitare di chiudersi in un vicolo cieco. Il motore nuovo:
+## How the engine works
 
-- **Cerca l'intera linea** con una *beam search*: tiene aperte le ~50 linee
-  migliori e sceglie alla fine quella con il punteggio complessivo più alto.
-- **Ritmo**: prima costruisce una griglia (dalle note della melodia per 1:1, 2:1,
-  4:1 e ritardi; dai tempi della battuta per libero e fiorito, più fitta dove la
-  melodia tiene e più rada dove si muove). La ricerca può poi tenere una nota
-  (legatura), che diventa una nota lunga o un ritardo, oppure tacere quando non
-  c'è spazio.
-- **Armonia**: stima l'accordo di ogni tempo da tutte le note che suonano (anche
-  le voci interne dell'accompagnamento), con preferenza per la fondamentale al
-  basso; premia le note che completano l'accordo (soprattutto la terza mancante).
-  Riconosce anche gli accordi fuori tonalità; le note alterate sentite
-  nell'ultima battuta diventano disponibili per il contrappunto e la stessa nota
-  naturale è sconsigliata (niente false relazioni).
-- **Regole verticali**: niente quinte e ottave parallele o per moto contrario (scartate,
-  verificate a fine calcolo); dirette penalizzate soprattutto tra voci esterne;
-  niente incroci; evita unisoni e seconde con le voci interne; sensibile non
-  raddoppiata; niente false relazioni.
-- **Dissonanze**: ammesse solo come nota di passaggio o di volta sui tempi deboli
-  (entrata e uscita per grado), come ritardo preparato che scende di grado, o
-  come settima di dominante che scende; appoggiature solo nello stile libero.
-  Nel 4:1, nel fiorito e nel libero anche nelle figure della 3ª specie:
-  **cambiata** (la dissonanza scende di grado, salta di terza nella stessa
-  direzione e risale di grado; nel rigoroso solo in discesa) e **doppia volta**
-  (le due note vicine di una nota, raggiunte una dall'altra per terza, poi il
-  ritorno alla nota). Nelle specie con la griglia sulla melodia (2:1, 4:1,
-  ritardi) le suddivisioni di una nota del canto dato contano come tempi deboli
-  anche se cadono su un tempo della battuta. A due voci, con il contrappunto
-  sopra il canto dato, la quarta e il tritono sono dissonanze.
-- **Linea melodica**: preferenza per i gradi congiunti; salti ampi recuperati
-  per moto contrario; vietati seconda eccedente, tritono, settime e salti oltre
-  l'ottava; sensibile che sale alla tonica; scala minore melodica (6° e 7° grado
-  alzati in salita); niente tritoni o settime **delineati** (Fa–Sol–La–Si: il
-  punto in cui la linea cambia direzione non deve formare quegli intervalli con
-  il punto di partenza del tratto); un solo culmine, pianificato in una frase
-  intorno al 60% del brano (la zona più acuta del registro è riservata a quella
-  frase); freno alle ripetizioni di figure battuta dopo battuta.
-- **Frasi e cadenze**: individua gli arrivi di frase (note lunghe su tempo forte,
-  note seguite da pause) e richiede lì note dell'accordo raggiunte per grado; il
-  finale cade su una nota dell'accordo di tonica (sulla tonica se il contrappunto
-  fa da basso). A due voci, se la melodia arriva al finale per grado, il
-  contrappunto preferisce la clausola classica: sesta maggiore che si apre
-  all'ottava (contrappunto sopra) o terza minore che si chiude all'unisono
-  (contrappunto sotto), per moto contrario.
-- **Entrata in imitazione** (facoltativa): una pausa iniziale, poi il ritmo
-  dell'inizio della melodia e i suoi intervalli, con un premio per ogni
-  intervallo ripreso. Le regole armoniche restano più forti: dove l'armonia non
-  lo consente l'imitazione è parziale, e la finestra dice quanti intervalli sono
-  stati ripresi.
-- **Note mantenute**: per «Rigenera il resto» ogni nota mantenuta diventa un
-  evento a sé, con un solo candidato possibile; le regole contano come punteggio
-  ma non la escludono mai, così il resto della linea si adatta a lei.
-- **Controllo**: ogni variante viene riletta con l'analisi (`analyze()`, le stesse
-  regole del pulsante «Analizza la voce»): errori e avvisi compaiono
-  nell'elenco delle varianti e ne decidono l'ordine dopo le parallele.
-- **Qualità di una variante**: il punteggio finale della ricerca diviso per il
-  numero di eventi, *senza* il rumore introdotto dalla Varietà; è quindi
-  confrontabile tra semi diversi.
-- **Moto**: premia il moto contrario rispetto a melodia e basso, penalizza i tre
-  moti simili contemporanei e le lunghe catene di terze/seste parallele.
+The original Python script (in `legacy/`) chose **one note at a time** (a
+"greedy" choice): it could not prepare a suspension, resolve a dissonance or
+avoid painting itself into a corner. The new engine:
 
-## Collaudo senza MuseScore
+- **Searches the whole line** with a *beam search*: it keeps the ~50 best
+  lines open and in the end picks the one with the highest overall score.
+- **Rhythm**: first it builds a grid (from the melody's notes for 1:1, 2:1, 4:1
+  and suspensions; from the beats of the bar for free and florid, denser where
+  the melody holds and sparser where it moves). The search can then hold a note
+  (tie), which becomes a long note or a suspension, or rest when there is no
+  room.
+- **Harmony**: it estimates the chord of each beat from all the sounding notes
+  (inner voices of the accompaniment included), preferring the root in the
+  bass; it rewards notes that complete the chord (above all the missing third).
+  It also recognises chords outside the key; altered notes heard in the last
+  bar become available to the counterpoint and the same natural note is
+  discouraged (no cross-relations).
+- **Vertical rules**: no parallel fifths and octaves, nor by contrary motion
+  (discarded, and checked again at the end); hidden fifths and octaves
+  penalised above all between outer voices; no crossings; avoids unisons and
+  seconds with inner voices; leading note not doubled; no cross-relations.
+- **Dissonances**: allowed only as passing or neighbour notes on weak beats
+  (approached and left by step), as a prepared suspension resolving down by
+  step, or as a dominant seventh resolving down; appoggiaturas only in free
+  style. In 4:1, florid and free also in the third-species figures:
+  **cambiata** (the dissonance steps down, leaps a third in the same direction
+  and steps back up; in strict style only downwards) and **double neighbour**
+  (the two neighbours of a note, one reached from the other by a third, then
+  the return to the note). In the species built on the melody's grid (2:1,
+  4:1, suspensions) the subdivisions of a cantus firmus note count as weak
+  beats even when they fall on a beat of the bar. In two voices, with the
+  counterpoint above the cantus firmus, the fourth and the tritone are
+  dissonances.
+- **Melodic line**: preference for steps; large leaps recovered by contrary
+  motion; augmented second, tritone, sevenths and leaps beyond the octave
+  forbidden; leading note rising to the tonic; melodic minor scale (6th and 7th
+  degrees raised going up); no **outlined** tritones or sevenths (F–G–A–B: the
+  point where the line changes direction must not form those intervals with
+  the start of the run); a single climax, planned in a phrase around 60% of the
+  piece (the top of the register is reserved for that phrase); a brake on
+  figures repeated bar after bar.
+- **Phrases and cadences**: it finds the phrase endings (long notes on strong
+  beats, notes followed by rests) and asks there for chord notes reached by
+  step; the final falls on a note of the tonic chord (on the tonic if the
+  counterpoint is the bass). In two voices, if the melody reaches the final by
+  step, the counterpoint prefers the classic clausula: major sixth opening to
+  the octave (counterpoint above) or minor third closing to the unison
+  (counterpoint below), in contrary motion.
+- **Imitative entry** (optional): an initial rest, then the rhythm of the
+  melody's opening and its intervals, with a reward for each interval
+  imitated. The harmonic rules stay stronger: where the harmony does not allow
+  it the imitation is partial, and the window says how many intervals were
+  imitated.
+- **Kept notes**: for «Regenerate the rest» each kept note becomes an event of
+  its own with a single possible candidate; the rules count in the score but
+  never exclude it, so the rest of the line adapts to it.
+- **Check**: every variant is read back with the analysis (`analyze()`, the
+  same rules as the «Analyze voice» button): errors and warnings appear in the
+  list of variants and decide their order after parallels.
+- **Quality of a variant**: the final score of the search divided by the
+  number of events, *without* the noise added by Variety; it can therefore be
+  compared across seeds.
+- **Motion**: rewards contrary motion against melody and bass, penalises three
+  voices moving the same way at once and long chains of parallel thirds and
+  sixths.
+- **Language**: the engine contains no user-facing text. Findings, errors,
+  keys and parallels come out as codes and data (notes as *tpc*), and the
+  interface translates them with the files in `i18n/`.
+
+## Testing without MuseScore
 
 ```bash
-node tests/run_tests.js [seme]                    # casi sintetici: niente parallele, dissonanze non trattate,
-                                                  # incroci; analisi, note mantenute, entrata, figure
+node tests/run_tests.js [seed] [species] [lang]   # synthetic cases: no parallels, untreated dissonances,
+                                                  # crossings; analysis, kept notes, entry, figures
+node tests/check_i18n.js                          # translations: keys, placeholders, untranslated texts
 python3 tests/musicxml_demo.py in.mxl out.mxl free,florid,2:1,sus,1:1
-python3 tests/musicxml_demo.py in.mxl out.mxl free --seed 6304 --variants 5   # 5 varianti in ordine di qualità
-python3 tests/mock/run_mock.py                    # esegue il plugin QML con un finto MuseScore (richiede PySide6):
-                                                  # varianti, scelta, rigenera il resto, analisi, impostazioni
+python3 tests/musicxml_demo.py in.mxl out.mxl free --seed 6304 --variants 5   # 5 variants in order of quality
+python3 tests/mock/run_mock.py                    # runs the QML plugin with a fake MuseScore (needs PySide6):
+                                                  # variants, choice, regenerate the rest, analysis, settings,
+                                                  # language switch with no missing keys
 ```
 
-`musicxml_demo.py` legge un MusicXML come farebbe il plugin, chiama il motore e
-scrive uno spartito con una parte di contrappunto per ogni specie richiesta, da
-aprire e ascoltare in MuseScore.
+`musicxml_demo.py` reads a MusicXML file as the plugin would, calls the engine
+and writes a score with one counterpoint part per requested species, to open
+and listen to in MuseScore (`--lang it` for Italian messages).
+`tools/wiki_examples.py` regenerates the Wiki's music examples with the engine.
 
-## Limiti noti
+## Known limitations
 
-- Collaudato con un finto ambiente MuseScore (Qt 6) e su spartiti MusicXML, non
-  ancora dentro MuseScore 4: alcune parti dell'API cambiano tra le versioni 4.x
-  (lettura dell'indicazione di tempo, comando `tie`). Se le legature non vengono
-  create il plugin lo segnala, e le note restano ripetute invece che legate.
-- Una sola voce di contrappunto per volta.
-- Le terzine e gli altri gruppi irregolari della melodia vengono letti, ma il
-  contrappunto usa solo valori binari e puntati.
-- Nella specie 1:1, dove il ritmo non lascia alternative, il culmine può essere
-  toccato due o tre volte, sempre nella frase centrale.
-- L'entrata in imitazione funziona quando la melodia comincia con almeno tre
-  note in una battuta (o in due); con un basso già scritto l'armonia spesso
-  consente di riprendere solo una parte degli intervalli.
-- «Rigenera il resto» usa le note selezionate se il plugin riesce a leggere la
-  selezione (`curScore.selection.elements`, diverso tra le versioni 4.x);
-  altrimenti usa le note cambiate a mano rispetto all'ultima variante scritta.
-- L'analisi colora le note con rosso e arancione e, all'analisi successiva,
-  riporta al nero solo le note con quei due colori.
-- Nei passaggi in cui melodia e accompagnamento sono molto vicini (per esempio
-  un arpeggio condiviso tra le mani) il contrappunto può fare brevi pause per
-  evitare quinte od ottave parallele.
-- Dove la melodia esce dal registro della voce, la voce passa dall'altra parte
-  della melodia (scambio delle parti) per quelle battute; con la posizione
-  "sopra la melodia" senza strumento, in qualche seme il culmine può non cadere
-  nella frase centrale (la classifica delle varianti lo mostra).
+- Tested with a fake MuseScore environment (Qt 6) and on MusicXML scores, not
+  yet inside MuseScore 4: some parts of the API change between 4.x versions
+  (reading the time signature, the `tie` command). If the ties are not created
+  the plugin says so, and the notes stay repeated instead of tied.
+- One counterpoint voice at a time.
+- Triplets and other tuplets in the melody are read, but the counterpoint uses
+  only binary and dotted values.
+- In 1:1, where the rhythm leaves no alternative, the climax may be reached
+  two or three times, always in the central phrase.
+- The imitative entry works when the melody starts with at least three notes in
+  one bar (or two); with a bass already written the harmony often allows only
+  part of the intervals to be imitated.
+- «Regenerate the rest» uses the selected notes if the plugin can read the
+  selection (`curScore.selection.elements`, which differs between 4.x
+  versions); otherwise it uses the notes changed by hand since the last
+  variant was written.
+- The analysis colours notes red and orange and, at the next analysis, turns
+  back to black only the notes with those two colours.
+- Where melody and accompaniment are very close (for example an arpeggio
+  shared between the hands) the counterpoint may rest briefly to avoid
+  parallel fifths or octaves.
+- Where the melody leaves the voice's register, the voice crosses to the other
+  side of the melody (voice exchange) for those bars; with the position "above
+  the melody" and no instrument, with some seeds the climax may not fall in the
+  central phrase (the ranking of the variants shows it).
+
+## Documentation and languages
+
+| Where | English | Italian |
+|---|---|---|
+| Interface | `plugin/Contrappunto/i18n/en.js` (reference) | `i18n/it.js` |
+| README | README.md | [README.it.md](README.it.md) |
+| Release notes | [CHANGELOG.md](CHANGELOG.md) | [CHANGELOG.it.md](CHANGELOG.it.md) |
+| In the zip | README.TXT (`release/readme/en.txt`) | LEGGIMI.TXT (`release/readme/it.txt`) |
+| Wiki | `docs/wiki/*.md` (English pages) | `docs/wiki/*.md` (Italian pages) |
+| How to translate | [TRANSLATING.md](TRANSLATING.md) | [TRANSLATING.it.md](TRANSLATING.it.md) |
+
+The Wiki's sources are in `docs/wiki/`: they are edited with a pull request
+like everything else, and the `.github/workflows/wiki.yml` workflow publishes
+them to the [GitHub Wiki](https://github.com/emanuelemerlo/counterpoint/wiki)
+on every push to `main`.
 
 ## Release
 
-Il workflow `.github/workflows/release.yml` collauda il motore e il plugin QML
-(con un finto MuseScore) a ogni push e pull request, e prepara il pacchetto tra
-gli *artifacts* dell'esecuzione. Per pubblicare una versione:
+The `.github/workflows/release.yml` workflow tests the engine, the
+translations and the QML plugin (with a fake MuseScore) on every push and pull
+request, and prepares the package among the run's *artifacts*. To publish a
+version:
 
-1. aggiorna `version:` in `plugin/Contrappunto/contrappunto.qml`;
-2. aggiungi in `CHANGELOG.md` la sezione `## X.Y.Z` con le note di rilascio;
-3. crea e invia il tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
-   (oppure *Actions → Release → Run workflow* indicando la versione).
+1. update `version:` in `plugin/Contrappunto/contrappunto.qml`;
+2. add the `## X.Y.Z` section with the release notes to `CHANGELOG.md`
+   (English) and `CHANGELOG.it.md` (Italian);
+3. create and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+   (or *Actions → Release → Run workflow* with the version).
 
-La release contiene `Contrappunto-X.Y.Z.zip` (cartella `contrappunto/`, in minuscolo, con i
-due file del plugin e `README.TXT`) e `README.TXT` a parte, con note di
-rilascio, funzionalità, installazione e istruzioni d'uso. Il testo fisso del
-README.TXT è in `release/README_TEMPLATE.txt`; per provarlo in locale:
-`python3 tools/build_release.py` (scrive in `dist/`).
+The release contains `Contrappunto-X.Y.Z.zip` (folder `contrappunto/`, lower
+case, with the plugin, `i18n/`, `README.TXT` and `LEGGIMI.TXT`) and the two
+instruction files separately as well; the release notes are in English with the
+Italian part in a collapsible section. The release languages are listed in
+`release/readme/languages.json`; to try it locally:
+`python3 tools/build_release.py` (writes to `dist/`).
