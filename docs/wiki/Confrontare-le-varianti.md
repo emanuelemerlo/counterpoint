@@ -31,8 +31,9 @@ L'elenco a sinistra mostra le varianti **dalla migliore**:
 - **poi** quelle con meno errori trovati dal controllo automatico,
 - **poi** quelle con il punteggio delle regole più alto.
 
-Per questo, nell'immagine, la variante 5 è ultima anche se ha il punteggio più
-alto: ha un errore. Ogni riga mostra anche la percentuale di gradi congiunti e
+Così una variante con un errore (in rosso, come l'ultima nell'immagine) viene
+dopo tutte quelle senza errori, anche quando ha un punteggio più alto. Ogni riga
+mostra anche la percentuale di gradi congiunti e
 di moto contrario, dove cade il culmine e se ci sono parallele; il rosso indica
 errori.
 

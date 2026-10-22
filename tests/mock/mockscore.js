@@ -1,5 +1,5 @@
 .pragma library
-// Spartito simulato con un sottoinsieme dell'API plugin di MuseScore usato da contrappunto.qml.
+// Fake score with the subset of MuseScore's plugin API used by contrappunto.qml.
 var CHORD = 93, REST = 25;
 var STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 var LET_TPC = { C: 14, D: 16, E: 18, F: 13, G: 15, A: 17, B: 19 };
@@ -30,7 +30,7 @@ function makeScore(spec) {
     var S = { log: [], tracks: [], parts: [], sharps: spec.sharps || 0 };
     var mlen = spec.num * 1920 / spec.den, nMeas = spec.measures;
     S.endTick = mlen * nMeas;
-    // misure
+    // measures
     var measures = [];
     for (var i = 0; i < nMeas; i++) measures.push({ firstSegment: { tick: i * mlen }, lastSegment: { tick: (i + 1) * mlen },
                                                      timesigNominal: { numerator: spec.num, denominator: spec.den } });
@@ -103,9 +103,9 @@ function makeCursor(S) {
         for (var i = t.length - 1; i >= 0; i--) {
             var e = t[i];
             if (e.tick < b && e.tick + e.dur > a) {
-                // come MuseScore 4 in alcuni casi: la sovrascrittura lascia l'accordo precedente
+                // like MuseScore 4 in some cases: overwriting leaves the previous chord in place
                 if (S.leakyOverwrite && e.type === CHORD) continue;
-                if (e.tick < a) { e.dur = a - e.tick; continue; }              // tronca
+                if (e.tick < a) { e.dur = a - e.tick; continue; }              // truncate
                 if (e.tick + e.dur > b) { t.splice(i, 1, el(b, e.tick + e.dur - b, REST, [])); continue; }
                 t.splice(i, 1);
             }

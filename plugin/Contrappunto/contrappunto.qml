@@ -517,7 +517,7 @@ MuseScore {
         }).join("; ");
     }
     function extrasText(r, entryAsked) {
-        var txt = "\n" + tr("extras.check", { counts: checkText(r) });
+        var txt = "\n" + (r.checkError ? tr("extras.checkFailed", { msg: r.checkError }) : tr("extras.check", { counts: checkText(r) }));
         var f = r.figures;
         if (f) {
             var parts = [];
@@ -641,9 +641,7 @@ MuseScore {
     function setVariantCount(n) { variantsSpin.value = n; return separateCheck.checked; }
     function setDestination(staff, voice) { existingRadio.checked = true; targetStaffCombo.currentIndex = staff; voiceCombo.currentIndex = voice; }
     function setSpecies(i) { speciesCombo.currentIndex = i; }
-    function setInstrument(id) {
-        for (var k = 0; k < instruments.length; k++) if (instruments[k].id === id) instrumentCombo.currentIndex = k;
-    }
+    function setSeed(n) { seedSpin.value = n; }
 
     function seedFor(seed0, i) { return ((seed0 - 1 + i) % 99999) + 1; }
 
@@ -1180,6 +1178,7 @@ MuseScore {
                         model: plugin.candidates
                         ScrollBar.vertical: ScrollBar { }
                         delegate: Rectangle {
+                            id: candItem
                             width: candList.width - 10
                             height: candCol.implicitHeight + 10
                             radius: 3
@@ -1192,7 +1191,7 @@ MuseScore {
                                 x: 8; y: 5; width: parent.width - 16; spacing: 1
                                 Label {
                                     width: parent.width; elide: Text.ElideRight
-                                    text: plugin.candTitle(index); color: plugin.cText; font.bold: parent.parent.sel
+                                    text: plugin.candTitle(index); color: plugin.cText; font.bold: candItem.sel
                                 }
                                 Label {
                                     width: parent.width; elide: Text.ElideRight

@@ -44,6 +44,9 @@ nello zip. Il numero deve coincidere con `version:` in
   segnaposto mancante, nessuna scritta lasciata fuori dalla traduzione.
 
 ### Correzioni
+- Se il controllo automatico di una variante non riusciva, la variante
+  risultava con «0 errori, 0 avvisi»: ora la finestra dice che il controllo non
+  è riuscito.
 - Il collaudo del plugin con il finto MuseScore segnalava «RESULT OK» anche
   dopo una verifica fallita: ora fallisce come deve.
 

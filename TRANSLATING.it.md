@@ -25,7 +25,7 @@ l'inglese.
 3. Registra la lingua in `plugin/Contrappunto/i18n/i18n.js`: aggiungi
    `.import "xx.js" as Xx` accanto agli altri import e `Xx.LANG` in
    `LANGUAGES`.
-4. Esegui il controllo: `node tests/check_i18n.js` (Node.js 18 o successivo).
+4. Esegui il controllo: `node tests/check_i18n.js` (Node.js 22 o successivo).
    Ti segnala chiavi, segnaposto e forme plurali mancanti.
 5. Provala in MuseScore: copia la cartella `plugin/Contrappunto` nella cartella
    dei plugin come `contrappunto`, riavvia MuseScore, apri il plugin e scegli

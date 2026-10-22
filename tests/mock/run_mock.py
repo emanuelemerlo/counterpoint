@@ -1,4 +1,4 @@
-# Esegue contrappunto.qml dentro un finto ambiente MuseScore: python3 tests/mock/run_mock.py
+# Runs contrappunto.qml inside a fake MuseScore environment: python3 tests/mock/run_mock.py
 import sys, os
 from PySide6.QtCore import QUrl, QTimer
 from PySide6.QtGui import QGuiApplication

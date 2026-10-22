@@ -32,15 +32,15 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -62,7 +62,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
-          pip install -q PySide6-Essentials
+          pip install -q PySide6-Essentials==6.12.0   # version used to develop the tests
           timeout 120 python3 tests/mock/run_mock.py 2>&1 | tee mock.log
           grep -q "RESULT OK" mock.log
           ! grep -q "RESULT FAIL" mock.log
@@ -82,7 +82,7 @@ jobs:
         run: python3 tools/build_release.py ${{ steps.ver.outputs.tag && format('--expect-version {0}', steps.ver.outputs.tag) || '' }}
 
       - name: Upload the package as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Contrappunto-${{ steps.pkg.outputs.version }}
           path: |

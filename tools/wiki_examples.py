@@ -161,7 +161,8 @@ def render(xml, path, width=1600, one_line=False):
                    "adjustPageWidth": one_line, "breaks": "none" if one_line else "auto",
                    "header": "none", "footer": "none", "svgViewBox": True,
                    "pageMarginLeft": 60, "pageMarginRight": 60, "pageMarginTop": 40, "pageMarginBottom": 40,
-                   "spacingSystem": 12, "barLineWidth": 0.4})
+                   "spacingSystem": 12, "barLineWidth": 0.4,
+                   "xmlIdSeed": 1})          # fixed element ids: regenerating gives identical files
     if not tk.loadData(xml):
         sys.exit("verovio could not read " + path)
     svg = tk.renderToSVG(1)

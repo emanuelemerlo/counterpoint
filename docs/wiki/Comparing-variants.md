@@ -31,8 +31,9 @@ The list on the left shows the variants **from the best**:
 - **then** those with fewer errors found by the automatic check,
 - **then** those with the higher rule score.
 
-That is why, in the picture, variant 5 comes last even though its score is the
-highest: it has one error. Each line also shows the percentage of stepwise
+So a variant with an error (in red, like the last one in the picture) comes
+after all those without errors, even when its score is higher. Each line also
+shows the percentage of stepwise
 motion and of contrary motion, where the climax falls and whether there are
 parallels; red means errors.
 
