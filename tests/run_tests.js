@@ -1,11 +1,8 @@
-// Collaudo del motore fuori da MuseScore:  node tests/run_tests.js [seme]
-// Carica plugin/Contrappunto/contrappunto_engine.js (senza la riga ".pragma library").
-var fs = require("fs"), path = require("path");
-var src = fs.readFileSync(path.join(__dirname, "../plugin/Contrappunto/contrappunto_engine.js"), "utf8")
-            .replace(/^\.pragma library\s*/, "");
-var Module = { exports: {} };
-new Function("module", src)(Module);
-var E = Module.exports;
+// Engine tests outside MuseScore:  node tests/run_tests.js [seed] [species,...] [lang]
+// Loads plugin/Contrappunto/contrappunto_engine.js and i18n/ as MuseScore does.
+var L = require("./lib/qmljs.js");
+var E = L.engine(), I18n = L.i18n();
+var LANG = process.argv[4] || "en";
 
 var DUR = { w: 1920, "h.": 1440, h: 960, "q.": 720, q: 480, "e.": 360, e: 240, s: 120 };
 var STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -38,7 +35,7 @@ function measures(end, num, den, pickup) {
     return out;
 }
 var PCN = ["Do", "Do#", "Re", "Mib", "Mi", "Fa", "Fa#", "Sol", "Lab", "La", "Sib", "Si"];
-function name(it) { return it.midi === null ? "—" : E.tpcName(it.tpc) + (Math.floor(it.midi / 12) - 1); }
+function name(it) { return it.midi === null ? "—" : I18n.midiName(LANG, it.midi, it.tpc); }
 
 var CASES = [
     { title: "Inno alla gioia – Do maggiore 4/4, melodia + basso",
@@ -80,9 +77,9 @@ CASES.forEach(function (cs) {
         var r = res.report;
         totalPar += r.parallels;
         console.log("\n== " + cs.title + "  [" + sp + "]  " + (Date.now() - t0) + " ms");
-        console.log("tonalità " + r.key + ", ruolo " + r.role + ", note " + r.notes +
-                    ", passi/salti " + r.steps + "/" + r.leaps + ", contrario/simile " + r.contrary + "/" + r.similar +
-                    ", parallele " + r.parallels + ", culmini " + r.climaxCount);
+        console.log("key " + I18n.keyName(LANG, r.key) + ", role " + r.role + ", notes " + r.notes +
+                    ", steps/leaps " + r.steps + "/" + r.leaps + ", contrary/similar " + r.contrary + "/" + r.similar +
+                    ", parallels " + r.parallels + ", climaxes " + r.climaxCount);
         var line = [], bar = -1;
         res.items.forEach(function (it) {
             var mb = Math.floor(it.tick / (cs.num * 1920 / cs.den));
@@ -90,10 +87,10 @@ CASES.forEach(function (cs) {
             line.push(name(it) + "(" + it.ticks + (it.tieNext ? "~" : "") + ")");
         });
         console.log(line.join(" "));
-        if (r.details.length) console.log("  ! " + r.details.join("; "));
-        console.log("controllo: " + r.errors + " errori, " + r.warnings + " avvisi" +
+        if (r.details.length) console.log("  ! " + r.details.map(function (d) { return d.interval + "ths with " + d.voice + " at tick " + d.tick; }).join("; "));
+        console.log("check: " + r.errors + " errors, " + r.warnings + " warnings" +
                     (r.findings.length ? " – " + r.findings.map(function (f) { return f.rule + "@" + f.tick; }).join(" ") : ""));
-        r.findings.forEach(function (f) { check(!NEVER[f.rule], cs.title + " [" + sp + "]: " + f.text + " a tick " + f.tick); });
+        r.findings.forEach(function (f) { check(!NEVER[f.rule], cs.title + " [" + sp + "]: " + I18n.finding(LANG, f) + " at tick " + f.tick); });
     });
 });
 
@@ -105,32 +102,32 @@ function input(cs, opts) {
     return { melody: m.events, bass: b.events, measures: measures(end, cs.num, cs.den), keys: [{ tick: 0, sharps: cs.sharps }],
              start: 0, end: end, options: o };
 }
-console.log("\n== Analisi di una voce con errori noti");
+console.log("\n== Analysis of a voice with known mistakes");
 var bad = E.analyze({
     melody: parse("C4:w D4:w E4:w F4:w G4:w F4:w").events, bass: [], measures: measures(6 * 1920, 4, 4), keys: [{ tick: 0, sharps: 0 }],
     start: 0, end: 6 * 1920, line: parse("G4:w A4:w B4:w D4:w D5:w C5:w").events });
-bad.findings.forEach(function (f) { console.log("  " + f.tick + " " + f.level + " " + f.text); });
+bad.findings.forEach(function (f) { console.log("  " + f.tick + " " + f.level + " " + I18n.finding(LANG, f)); });
 var rules = bad.findings.map(function (f) { return f.rule; });
 check(rules.filter(function (x) { return x === "parallel5"; }).length === 3, "l'analisi deve trovare tre coppie di quinte parallele");
 check(rules.indexOf("crossing") >= 0, "l'analisi deve trovare l'incrocio delle voci");
 
-console.log("\n== Note fissate");
+console.log("\n== Locked notes");
 var lk = [{ tick: 1920, dur: 960, midi: 67, tpc: 15 }, { tick: 5760, dur: 480, midi: 72, tpc: 14 }];
 var rl = E.generate(input(CASES[0], { species: "free", locked: lk }));
 lk.forEach(function (l) {
     var hit = rl.items.filter(function (x) { return x.tick === l.tick; })[0];
-    console.log("  tick " + l.tick + ": attesa " + l.midi + "/" + l.dur + ", scritta " + (hit ? hit.midi + "/" + hit.ticks : "nulla"));
+    console.log("  tick " + l.tick + ": expected " + l.midi + "/" + l.dur + ", written " + (hit ? hit.midi + "/" + hit.ticks : "nothing"));
     check(hit && hit.midi === l.midi && hit.tpc === l.tpc && hit.ticks === l.dur, "la nota fissata a tick " + l.tick + " deve restare com'è");
 });
 check(rl.report.locked === 2 && rl.report.parallels === 0, "note fissate: report e assenza di parallele");
 
-console.log("\n== Entrata in imitazione");
+console.log("\n== Imitative entry");
 var re = E.generate(input(CASES[0], { species: "free", entry: true }));
-console.log("  " + JSON.stringify(re.report.entry) + "  inizio: " + re.items.slice(0, 5).map(name).join(" "));
+console.log("  " + JSON.stringify(re.report.entry) + "  start: " + re.items.slice(0, 5).map(name).join(" "));
 check(re.report.entry && re.items[0].midi === null && re.items[0].tick === 0, "con l'entrata in imitazione il contrappunto inizia con una pausa");
 check(re.report.entry && re.report.entry.matched >= 1, "l'entrata deve riprendere almeno un intervallo della melodia");
 
-console.log("\n== Figure della 3ª specie (cambiata, doppia volta)");
+console.log("\n== Third-species figures (cambiata, double neighbour)");
 var fig = 0;
 for (var sd = 1; sd <= 6; sd++) {
     [CASES[2], CASES[3]].forEach(function (cs) {
@@ -138,9 +135,9 @@ for (var sd = 1; sd <= 6; sd++) {
         fig += rf.report.figures.cambiata + rf.report.figures.double;
     });
 }
-console.log("  cambiate e doppie volte in 12 contrappunti 4:1: " + fig);
+console.log("  cambiatas and double neighbours in 12 4:1 counterpoints: " + fig);
 check(fig > 0, "il 4:1 deve poter usare cambiata o doppia volta");
 
-console.log("\nTotale parallele: " + totalPar);
-if (failures.length) console.log("Controlli falliti: " + failures.length);
+console.log("\nTotal parallels: " + totalPar);
+if (failures.length) console.log("Failed checks: " + failures.length);
 process.exit(totalPar || failures.length ? 1 : 0);

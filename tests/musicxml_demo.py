@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Prova il motore su uno spartito reale, senza MuseScore.
+Runs the engine on a real score, without MuseScore.
 
-  python3 tests/musicxml_demo.py input.mxl output.mxl [specie,...] [--seed N] [--variants N]
+  python3 tests/musicxml_demo.py input.mxl output.mxl [species,...] [--seed N] [--variants N] [--lang en|it]
 
-Legge il MusicXML come farebbe il plugin (melodia = rigo 1, basso = rigo 2 della
-prima parte, oppure prima e seconda parte), chiama il motore JS con node e
-scrive uno spartito con una parte di contrappunto in più per ogni specie.
-Con --variants N calcola N varianti per specie (semi consecutivi) e le scrive
-in ordine di qualità, come il plugin con «Una variante per rigo».
-Specie: free, 1:1, 2:1, 4:1, sus, florid.
+Reads the MusicXML as the plugin would (melody = staff 1, bass = staff 2 of the
+first part, or first and second part), calls the JS engine with node and writes
+a score with one extra counterpoint part per species.
+With --variants N it computes N variants per species (consecutive seeds) and
+writes them in order of quality, like the plugin's «One variant per new staff».
+Species: free, 1:1, 2:1, 4:1, sus, florid.
 """
 import json, os, subprocess, sys, zipfile, io, copy
 import xml.etree.ElementTree as ET
@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 LET_TPC = {"C": 14, "D": 16, "E": 18, "F": 13, "G": 15, "A": 17, "B": 19}
 LETTERS = "CDEFGAB"
-LABEL = {"free": "libero", "1:1": "1:1", "2:1": "2:1", "4:1": "4:1", "sus": "ritardi", "florid": "fiorito"}
+LABEL = {"free": "free", "1:1": "1:1", "2:1": "2:1", "4:1": "4:1", "sus": "suspensions", "florid": "florid"}
 
 
 def load_xml(path):
@@ -147,18 +147,18 @@ def add_part(root, part_id, name, items, measures, keys, clef):
                 if it["tieNext"]: ET.SubElement(nt, "tied", type="start")
 
 
-def opt_arg(name, default):
+def opt_arg(name, default, cast=int):
     if name in sys.argv:
-        return int(sys.argv[sys.argv.index(name) + 1])
+        return cast(sys.argv[sys.argv.index(name) + 1])
     return default
 
 
 def main():
-    seed, nvar = opt_arg("--seed", 7), opt_arg("--variants", 1)
+    seed, nvar, lang = opt_arg("--seed", 7), opt_arg("--variants", 1), opt_arg("--lang", "en", str)
     args, skip = [], False
     for a in sys.argv[1:]:
         if skip: skip = False; continue
-        if a in ("--seed", "--variants"): skip = True; continue
+        if a in ("--seed", "--variants", "--lang"): skip = True; continue
         args.append(a)
     src, dst = args[0], args[1]
     species = (args[2] if len(args) > 2 else "free,florid,2:1").split(",")
@@ -176,7 +176,7 @@ def main():
             inp = {"melody": staves[mel_key], "bass": staves[bass_key] if bass_key else [],
                    "measures": [{k: m[k] for k in ("tick", "len", "num", "den", "isFirst")} for m in measures],
                    "keys": keys, "start": 0, "end": end,
-                   "options": {"species": sp, "seed": seed + v, "sameStaff": False}}
+                   "options": {"species": sp, "seed": seed + v, "sameStaff": False}, "lang": lang}
             out = subprocess.run(["node", os.path.join(HERE, "run_on_json.js")], input=json.dumps(inp),
                                  capture_output=True, text=True, check=True)
             res = json.loads(out.stdout)
@@ -190,10 +190,10 @@ def main():
             lo, hi = rep["range"]
             clef = ("G", "2") if (lo + hi) / 2 >= 60 else (("G", "2", "8") if (lo + hi) / 2 >= 52 else ("F", "4"))
             npart += 1
-            name = "Contrappunto (%s)" % LABEL.get(sp, sp) + ((" %d – seme %d" % (rank, sd)) if nvar > 1 else "")
+            name = "Contrappunto (%s)" % LABEL.get(sp, sp) + ((" %d – seed %d" % (rank, sd)) if nvar > 1 else "")
             add_part(root, "PCP%d" % npart, name, items, measures, keys, clef)
-            print("%-7s seme %-5d qualità %6.2f  tonalità %s, ruolo %s, %d note, passi/salti %d/%d, contrario/simile %d/%d, parallele %d, culmini %d, errori/avvisi %d/%d, %d ms"
-                  % (sp, sd, rep["quality"], rep["key"], rep["role"], rep["notes"], rep["steps"], rep["leaps"], rep["contrary"],
+            print("%-7s seed %-5d quality %6.2f  key %s, role %s, %d notes, steps/leaps %d/%d, contrary/similar %d/%d, parallels %d, climaxes %d, errors/warnings %d/%d, %d ms"
+                  % (sp, sd, rep["quality"], rep["keyName"], rep["role"], rep["notes"], rep["steps"], rep["leaps"], rep["contrary"],
                      rep["similar"], rep["parallels"], rep["climaxCount"], rep.get("errors", 0), rep.get("warnings", 0), rep["ms"]))
             for d in rep["details"]: print("   !", d)
             for f in rep.get("findings", []):
@@ -203,7 +203,7 @@ def main():
         z.writestr("META-INF/container.xml", '<?xml version="1.0" encoding="UTF-8"?><container><rootfiles>'
                    '<rootfile full-path="score.xml" media-type="application/vnd.recordare.musicxml+xml"/></rootfiles></container>')
         z.writestr("score.xml", data)
-    print("scritto", dst)
+    print("written", dst)
 
 
 if __name__ == "__main__":

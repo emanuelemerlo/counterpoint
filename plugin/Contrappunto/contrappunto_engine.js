@@ -1,6 +1,6 @@
 .pragma library
 /*
- * Contrappunto automatico – motore di generazione
+ * Contrappunto – motore di generazione e di analisi
  * ------------------------------------------------
  * JavaScript puro, senza dipendenze da MuseScore: il plugin QML legge lo
  * spartito, passa qui dei dati semplici e riscrive il risultato.
@@ -18,7 +18,11 @@
  * Output: { items: [{ tick, ticks, midi|null, tpc, tieNext }], report: {...} }
  *
  * analyze() controlla invece una voce già scritta (input.line) con le stesse regole
- * e ritorna i rilievi: { findings: [{ tick, rule, level, text }], report: {...} }.
+ * e ritorna i rilievi: { findings: [{ tick, rule, level, args }], report: {...} }.
+ *
+ * Il motore non contiene testi per l'utente: errori, rilievi, tonalità e parallele
+ * escono come codici e dati (note come tpc), e l'interfaccia li traduce con i18n/.
+ * Gli errori sono lanciati come stringhe "error.<codice>", chiavi dei file di lingua.
  */
 
 var WHOLE = 1920;
@@ -48,7 +52,7 @@ function tpcToPc(tpc) { return mod((tpc - 14) * 7, 12); }
 function tpcToLetter(tpc) { return mod((tpc - 14) * 4, 7); }
 var NAT = [0, 2, 4, 5, 7, 9, 11];
 var DEF_TPC = [14, 21, 16, 11, 18, 13, 20, 15, 10, 17, 12, 19];
-var NAMES = ["Do", "Re", "Mi", "Fa", "Sol", "La", "Si"];
+var NAMES = ["C", "D", "E", "F", "G", "A", "B"];   // solo per il debug: i nomi per l'utente sono in i18n/
 
 function diaOf(midi, letter) {
     var alter = mod(midi, 12) - NAT[letter];
@@ -125,7 +129,7 @@ function makeKey(sharps, mode) {
         k.scale.push({ tpc: t0 + 5, deg: 6, raised: true, natural: false });
     }
     k.chords = buildChords(k);
-    k.name = tpcName(t0) + (minor ? " minore" : " maggiore");
+    k.name = tpcName(t0) + (minor ? " minor" : " major");   // solo per il debug
     keyCache[id] = k;
     return k;
 }
@@ -311,11 +315,11 @@ function generate(input) {
     // cambiata e doppia volta: 3ª specie (4:1), fiorito e libero
     C.figures = opt.species === "4:1" || opt.species === "florid" || opt.species === "free";
     C.ms = prepMeasures(input.measures, opt.meter);
-    if (!C.ms.length) throw "Nessuna misura nell'intervallo.";
+    if (!C.ms.length) throw "error.noMeasures";
     C.melLine = buildLine(input.melody || [], C.start, C.end, true);
     C.bassLine = buildLine(input.bass || [], C.start, C.end, false);
     var hasMel = C.melLine.some(function (s) { return s.note; });
-    if (!hasMel) throw "La melodia non contiene note nell'intervallo scelto.";
+    if (!hasMel) throw "error.noMelody";
     C.hasBass = C.bassLine.some(function (s) { return s.note; });
     C.locked = (opt.locked || []).filter(function (l) { return l && l.dur > 0 && l.tick >= C.start && l.tick < C.end; })
         .map(function (l) { return { tick: l.tick, dur: Math.min(l.dur, C.end - l.tick), midi: l.midi, tpc: l.tpc }; })
@@ -335,7 +339,7 @@ function generate(input) {
     var path = search(C, events);
     var items = buildItems(C, events, path);
     var report = verify(C, events, path);
-    report.key = C.keyName;
+    report.key = { tpc: C.keys[0].key.tonicTpc, mode: C.keys[0].key.mode };
     report.role = C.role;
     report.range = [C.lo, C.hi];
     report.rangeShift = C.rangeShift;      // ottave di spostamento per l'estensione dello strumento
@@ -670,8 +674,15 @@ function planEvents(C) {
         ticks.push(la);
         if (lb < C.end) ticks.push(lb);
     }
-    // attacchi del basso in contrappunto fiorito/libero
     ticks = uniqSort(ticks);
+    // nota finale: un solo evento sotto l'ultima nota della melodia, come nel contrappunto
+    // di specie (niente semiminime o crome nell'ultima battuta, si chiude su una nota lunga)
+    var tf = finalAttack(C);
+    if (tf !== null && C.end - tf <= 2 * measureAt(C.ms, tf).nominal) {
+        var lockedAt = {};
+        for (i = 0; i < C.locked.length; i++) { lockedAt[C.locked[i].tick] = 1; lockedAt[C.locked[i].tick + C.locked[i].dur] = 1; }
+        ticks = ticks.filter(function (x) { return x <= tf || lockedAt[x]; });
+    }
     var events = [];
     for (i = 0; i < ticks.length; i++) {
         var t0 = ticks[i], t1 = i + 1 < ticks.length ? ticks[i + 1] : C.end;
@@ -713,6 +724,12 @@ function planEntry(C) {
         if (C.locked.some(function (l) { return l.tick < t0 + D; })) return null;
         return { t0: t0, t1: t0 + D, onsets: on, ints: ints, pc: head[0].note.pc, dia: head[0].note.dia, len: head.length };
     }
+    return null;
+}
+
+// inizio dell'ultima nota della melodia (null se la melodia non ne ha)
+function finalAttack(C) {
+    for (var i = C.melLine.length - 1; i >= 0; i--) if (C.melLine[i].note && C.melLine[i].attack) return C.melLine[i].t;
     return null;
 }
 
@@ -764,7 +781,9 @@ function planWindow(C, a, b, m, on) {
         subPts.push(m.tick - m.pickup + p);
     var fast = melAtt >= m.sub || hasShort(C.melLine, a, b, m.subLen);
     var florid;
-    if (sp === "florid") florid = !fast || C.rng() < 0.12;
+    // fiorito: valori misti. Sotto una nota lunga del canto dato circa un tempo su tre si
+    // divide in due crome; gli altri restano semiminime, che la ricerca può legare in note più lunghe.
+    if (sp === "florid") florid = C.rng() < (fast ? 0.12 : 0.35);
     else florid = (melAtt === 0) || (!fast && C.rng() < 0.2);
     if (florid) for (var i = 0; i < subPts.length; i++) on[subPts[i]] = 1;
     // nel fiorito, talvolta una figura puntata (es. croma puntata + semicroma)
@@ -845,6 +864,8 @@ function annotate(C, events) {
         for (var c = 0; c < cadSet.length; c++) if (cadSet[c] >= t && cadSet[c] < te) ev.isCad = true;
         if (ev.isCad && i > 0) events[i - 1].isPreCad = true;
     }
+    // prima nota suonata dal contrappunto
+    for (i = 0; i < events.length; i++) if (!events[i].rest) { events[i].isFirstSound = true; break; }
     // dopo la cadenza: fino al prossimo attacco della melodia
     var inAfter = false;
     for (i = 0; i < events.length; i++) {
@@ -1075,6 +1096,13 @@ function staticScore(C, ev, c) {
             if (y < 0) s -= 25;
             if (role === "below" && DISS_LOW[mod(y, 12)] && io.strength >= 2) s -= 15;
         }
+    }
+    // specie rigorose: si comincia con una consonanza perfetta con la voce più grave
+    // (ottava, quinta o unisono; sotto il canto dato solo ottava o unisono)
+    if (ev.isFirstSound && C.strict && C.opt.species !== "free" && mel) {
+        var ic;
+        if (role === "below") { ic = mod(mel.midi - c.midi, 12); s += ic === 0 ? 25 : (ic === 7 ? -10 : -25); }
+        else { ic = mod(c.midi - (bass || mel).midi, 12); s += (ic === 0 || ic === 7) ? 25 : -25; }
     }
     if (ev.isFinal) {
         if (ch) {
@@ -1515,13 +1543,13 @@ function verify(C, events, path) {
             if (p.midi !== c.midi) {
                 var ad = Math.abs(c.dia - p.dia);
                 if (ad === 1) rep.steps++; else rep.leaps++;
-                [[ev.bassPrev, ev.bass, "basso"], [ev.melPrev, ev.mel, "melodia"]].forEach(function (pr) {
+                [[ev.bassPrev, ev.bass, "bass"], [ev.melPrev, ev.mel, "melody"]].forEach(function (pr) {
                     var a0 = pr[0], a1 = pr[1];
                     if (!a0 || !a1 || a0.midi === a1.midi) return;
                     var r0 = Math.abs(p.midi - a0.midi) % 12, r1 = Math.abs(c.midi - a1.midi) % 12;
                     if (r0 === r1 && (r1 === 0 || r1 === 7)) {
                         rep.parallels++;
-                        rep.details.push((r1 === 7 ? "5e" : "8e") + " parallele con " + pr[2] + " a tick " + ev.tick);
+                        rep.details.push({ tick: ev.tick, interval: r1 === 7 ? 5 : 8, voice: pr[2] });
                     }
                     if (sign(a1.midi - a0.midi) === sign(c.midi - p.midi)) rep.similar++; else rep.contrary++;
                 });
@@ -1542,15 +1570,9 @@ function verify(C, events, path) {
 // con le stesse regole del motore, e ritorna l'elenco dei rilievi.
 //   input: come generate() più  line: [{ tick, dur, notes }]  (la voce da analizzare)
 //   output: { findings: [{ tick, rule, level: "error"|"warning", text }], report: {...} }
-var RULE_TEXT = {
-    parallel5: "quinte parallele", parallel8: "ottave parallele", hidden: "quinta o ottava diretta (con salto nella voce superiore)",
-    accented: "dissonanza in tempo forte non preparata", dissonance: "dissonanza non raggiunta o non lasciata per grado",
-    suspension: "ritardo che non scende di grado", seventh: "settima dell'accordo che non scende",
-    leap: "salto non ammesso", sixth: "salto di sesta (nel rigoroso solo la sesta minore ascendente)", leapRecovery: "salto ampio non recuperato per moto contrario",
-    outline: "tritono delineato", outline7: "settima delineata", crossing: "incrocio delle voci",
-    ltDoubled: "sensibile raddoppiata", ltResolution: "sensibile che non sale alla tonica",
-    crossRelation: "falsa relazione", climax: "culmine ripetuto", final: "finale fuori dall'accordo di tonica"
-};
+// regole dell'analisi (i testi sono nei file di lingua: rule.<codice>)
+var RULES = ["parallel5", "parallel8", "hidden", "accented", "dissonance", "suspension", "seventh", "leap", "sixth",
+             "leapRecovery", "outline", "outline7", "crossing", "ltDoubled", "ltResolution", "crossRelation", "climax", "final"];
 function analyze(input) {
     var opt = {}, k;
     for (k in DEFAULTS) opt[k] = DEFAULTS[k];
@@ -1558,13 +1580,13 @@ function analyze(input) {
     var C = { opt: opt, start: input.start, end: input.end, rng: makeRng(1), notes: [], locked: [] };
     C.strict = opt.strictness !== "free";
     C.ms = prepMeasures(input.measures, opt.meter);
-    if (!C.ms.length) throw "Nessuna misura nell'intervallo.";
+    if (!C.ms.length) throw "error.noMeasures";
     C.melLine = buildLine(input.melody || [], C.start, C.end, true);
     C.bassLine = buildLine(input.bass || [], C.start, C.end, false);
-    if (!C.melLine.some(function (x) { return x.note; })) throw "La melodia non contiene note nell'intervallo scelto.";
+    if (!C.melLine.some(function (x) { return x.note; })) throw "error.noMelody";
     C.hasBass = C.bassLine.some(function (x) { return x.note; });
     var cp = buildLine(input.line || [], C.start, C.end, true);
-    if (!cp.some(function (x) { return x.note; })) throw "La voce da analizzare non contiene note nell'intervallo scelto.";
+    if (!cp.some(function (x) { return x.note; })) throw "error.noVoice";
     detectKeys(C, input.keys || []);
     analyseHarmony(C);
     findCadences(C);
@@ -1590,13 +1612,13 @@ function analyze(input) {
     function noteOf(t) { for (var q = 0; q < notes.length; q++) if (notes[q].t <= t && t < notes[q].end) return notes[q]; return null; }
 
     var findings = [], seen = {};
-    var rep = { key: C.keyName, role: roles.length ? roles[0].role : role0, notes: notes.length, steps: 0, leaps: 0, contrary: 0, similar: 0, errors: 0, warnings: 0,
+    var rep = { key: { tpc: C.keys[0].key.tonicTpc, mode: C.keys[0].key.mode }, role: roles.length ? roles[0].role : role0, notes: notes.length, steps: 0, leaps: 0, contrary: 0, similar: 0, errors: 0, warnings: 0,
                 figures: { passing: 0, neighbor: 0, cambiata: 0, double: 0, suspension: 0, appoggiatura: 0 } };
-    function add(t, rule, level, extra) {
+    function add(t, rule, level, args) {
         var id = t + ":" + rule;
         if (seen[id]) return;
         seen[id] = 1;
-        findings.push({ tick: t, rule: rule, level: level, text: RULE_TEXT[rule] + (extra ? " (" + extra + ")" : "") });
+        findings.push({ tick: t, rule: rule, level: level, args: args || {} });
         if (level === "error") rep.errors++; else rep.warnings++;
     }
     function others(t) {
@@ -1644,14 +1666,14 @@ function analyze(input) {
         var ch = chordAt(C, t), key = keyAt(C, t);
         if (c.midi > maxM) maxM = c.midi;
         // incroci
-        if (o.mel && ((role === "above" && c.midi < o.mel.midi) || (role !== "above" && c.midi > o.mel.midi))) add(t, "crossing", "error", "con la melodia");
-        if (o.bass && role !== "below" && c.midi < o.bass.midi) add(t, "crossing", "error", "con il basso");
+        if (o.mel && ((role === "above" && c.midi < o.mel.midi) || (role !== "above" && c.midi > o.mel.midi))) add(t, "crossing", "error", { voice: "melody" });
+        if (o.bass && role !== "below" && c.midi < o.bass.midi) add(t, "crossing", "error", { voice: "bass" });
         // sensibile raddoppiata
         if (ch && ch.dominant && c.pc === key.ltPc && ((o.mel && o.mel.pc === c.pc) || (o.bass && o.bass.pc === c.pc))) add(t, "ltDoubled", "warning");
         // falsa relazione
         var mp = noteAt(C.melLine, t - 1), bp = noteAt(C.bassLine, t - 1);
         [o.mel, o.bass, t > C.start ? mp : null, t > C.start ? bp : null].forEach(function (x) {
-            if (x && x.letter === c.letter && x.pc !== c.pc) add(t, "crossRelation", "warning", tpcName(x.tpc) + " contro " + tpcName(c.tpc));
+            if (x && x.letter === c.letter && x.pc !== c.pc) add(t, "crossRelation", "warning", { other: x.tpc, note: c.tpc });
         });
         if (p) {
             var d = c.dia - p.dia, ad = Math.abs(d), am = Math.abs(c.midi - p.midi), mv = c.midi - p.midi;
@@ -1659,7 +1681,7 @@ function analyze(input) {
             // salti
             var bad = (ad === 1 && am === 3) || (ad === 2 && am !== 3 && am !== 4) || (ad === 3 && am !== 5) ||
                       (ad === 4 && am !== 7) || ad === 6 || (ad === 7 && am !== 12) || ad > 7 || (am === 6);
-            var lp = tpcName(p.tpc) + "–" + tpcName(c.tpc) + (ad > 7 ? ", oltre l'ottava" : "");
+            var lp = { from: p.tpc, to: c.tpc, overOctave: ad > 7 };
             if (bad) add(t, "leap", "error", lp);
             else if (ad === 5 && C.strict && mv !== 8) add(t, "sixth", "warning", lp);
             if (n.prev.prev) {
@@ -1685,18 +1707,18 @@ function analyze(input) {
                 if (pch && pch.dominant && role !== "middle") add(t, "ltResolution", "warning");
             }
             // moto rispetto a melodia e basso: parallele e dirette
-            [["mel", "melodia"], ["bass", "basso"]].forEach(function (v) {
+            [["mel", "melody"], ["bass", "bass"]].forEach(function (v) {
                 var a1 = o[v[0]], a0 = v[0] === "mel" ? mp : bp;
                 if (!a0 || !a1 || a0.midi === a1.midi || p.midi === c.midi) return;
                 if (opt.sameStaff && v[0] === "bass" && o.mel && a1.midi === o.mel.midi) return;
                 var r0 = Math.abs(p.midi - a0.midi) % 12, r1 = Math.abs(c.midi - a1.midi) % 12;
                 var dirO = sign(a1.midi - a0.midi);
                 if (dirO === dir) rep.similar++; else rep.contrary++;
-                if (r0 === r1 && (r1 === 0 || r1 === 7)) add(t, r1 === 7 ? "parallel5" : "parallel8", "error", "con " + v[1]);
+                if (r0 === r1 && (r1 === 0 || r1 === 7)) add(t, r1 === 7 ? "parallel5" : "parallel8", "error", { voice: v[1] });
                 else if (C.strict && dirO === dir && (r1 === 0 || r1 === 7)) {
                     var outer = v[0] === "bass" ? role === "above" : (!C.hasBass && role !== "middle");
                     var upperLeap = role === "above" ? am > 2 : Math.abs(a1.midi - a0.midi) > 2;
-                    if (outer && upperLeap) add(t, "hidden", "warning", "con " + v[1]);
+                    if (outer && upperLeap) add(t, "hidden", "warning", { voice: v[1] });
                 }
             });
         }
@@ -1740,7 +1762,7 @@ function analyze(input) {
     });
     // 3. culmine e finale
     var tops = notes.filter(function (x) { return x.note.midi === maxM; });
-    for (i = 1; i < tops.length; i++) add(tops[i].t, "climax", "warning", (i + 1) + "ª volta");
+    for (i = 1; i < tops.length; i++) add(tops[i].t, "climax", "warning", { n: i + 1 });
     var lastN = notes[notes.length - 1], fch = chordAt(C, lastN.t), fk = keyAt(C, lastN.t);
     if (fch && (!fch.set[lastN.note.pc] || (fch.root !== fk.tonicPc && fch.deg !== 0))) add(lastN.t, "final", "warning");
     findings.sort(function (a, b) { return a.tick - b.tick || (a.level === "error" ? -1 : 1); });
@@ -1748,5 +1770,5 @@ function analyze(input) {
 }
 
 // esportazioni per il collaudo in node
-var Engine = { generate: generate, analyze: analyze, makeKey: makeKey, tpcName: tpcName, DEFAULTS: DEFAULTS };
+var Engine = { generate: generate, analyze: analyze, makeKey: makeKey, tpcName: tpcName, DEFAULTS: DEFAULTS, RULES: RULES };
 if (typeof module !== "undefined") module.exports = Engine;

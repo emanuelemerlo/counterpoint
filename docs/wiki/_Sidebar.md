@@ -1,0 +1,31 @@
+**[Home](Home)**
+
+**English**
+- [Counterpoint in a nutshell](Counterpoint-in-a-nutshell)
+- [Installation](Installation)
+- [Quick start](Quick-start)
+- [Species and style](Choosing-a-species-and-style)
+- [Comparing variants](Comparing-variants)
+- [Checking an exercise](Checking-an-exercise)
+- [Keeping notes](Keeping-notes-and-regenerating)
+- [Existing staves](Writing-into-an-existing-staff)
+- [Options](Options-reference)
+- [Analysis rules](Analysis-rules)
+- [Troubleshooting](Troubleshooting)
+- [Glossary](Glossary)
+- [Translating](Translating)
+
+**Italiano**
+- [Il contrappunto in breve](Il-contrappunto-in-breve)
+- [Installazione](Installazione)
+- [Primi passi](Primi-passi)
+- [Specie e stile](Scegliere-specie-e-stile)
+- [Confrontare le varianti](Confrontare-le-varianti)
+- [Controllare un esercizio](Controllare-un-esercizio)
+- [Mantenere note](Mantenere-note-e-rigenerare)
+- [Righi esistenti](Scrivere-in-un-rigo-esistente)
+- [Opzioni](Opzioni)
+- [Regole dell'analisi](Regole-dell-analisi)
+- [Problemi e soluzioni](Problemi-e-soluzioni)
+- [Glossario](Glossario)
+- [Tradurre](Tradurre)

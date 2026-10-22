@@ -1,14 +1,14 @@
-# Collaudo, pacchetto e release del plugin.
+# Tests, package and release of the plugin.
 #
-# - push su un ramo o pull request: collaudo + pacchetto scaricabile tra gli
-#   "artifacts" dell'esecuzione (nessuna release).
-# - push di un tag vX.Y.Z: collaudo + pacchetto + release GitHub con lo zip del
-#   plugin, README.TXT e le note prese da CHANGELOG.md.
-# - avvio manuale (Actions → Release → Run workflow): come sopra; indicando la
-#   versione crea il tag e la release sul commit scelto.
+# - push to a branch or pull request: tests + package downloadable from the
+#   run's "artifacts" (no release).
+# - push of a tag vX.Y.Z: tests + package + GitHub release with the plugin zip,
+#   README.TXT / LEGGIMI.TXT and the notes from CHANGELOG.md and CHANGELOG.it.md.
+# - manual run (Actions → Release → Run workflow): as above; with a version it
+#   creates the tag and the release on the chosen commit.
 #
-# Il numero di versione deve coincidere con `version:` in contrappunto.qml e
-# avere una sezione "## X.Y.Z" in CHANGELOG.md, altrimenti il workflow si ferma.
+# The version must match `version:` in contrappunto.qml and have a "## X.Y.Z"
+# section in CHANGELOG.md, otherwise the workflow stops.
 name: Release
 
 on:
@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versione da pubblicare (es. 2.1.0); vuoto = solo pacchetto di prova"
+        description: "Version to publish (e.g. 2.7.0); empty = test package only"
         required: false
         default: ""
 
@@ -44,23 +44,30 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Collaudo del motore (nessuna quinta/ottava parallela)
+      - name: Engine tests (no parallel fifths/octaves, analysis, locked notes)
         run: node tests/run_tests.js
 
-      - name: Librerie di sistema per Qt (offscreen)
+      - name: Translations (keys, placeholders, untranslated texts)
+        run: node tests/check_i18n.js
+
+      - name: Wiki sources (links, images, languages)
+        run: python3 tests/check_wiki.py
+
+      - name: System libraries for Qt (offscreen)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libfontconfig1 libglib2.0-0 libdbus-1-3
 
-      - name: Collaudo del plugin QML con un finto MuseScore
+      - name: QML plugin test with a fake MuseScore
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           pip install -q PySide6-Essentials
           timeout 120 python3 tests/mock/run_mock.py 2>&1 | tee mock.log
           grep -q "RESULT OK" mock.log
+          ! grep -q "RESULT FAIL" mock.log
 
-      - name: Determina la versione da pubblicare
+      - name: Version to publish
         id: ver
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -70,20 +77,20 @@ jobs:
             echo "create_tag=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Pacchetto (zip, README.TXT, note di rilascio)
+      - name: Package (zip, README.TXT, LEGGIMI.TXT, release notes)
         id: pkg
         run: python3 tools/build_release.py ${{ steps.ver.outputs.tag && format('--expect-version {0}', steps.ver.outputs.tag) || '' }}
 
-      - name: Carica il pacchetto tra gli artifacts
+      - name: Upload the package as an artifact
         uses: actions/upload-artifact@v4
         with:
           name: Contrappunto-${{ steps.pkg.outputs.version }}
           path: |
             dist/Contrappunto-*.zip
-            dist/README.TXT
+            dist/*.TXT
             dist/release-notes.md
 
-      - name: Pubblica la release
+      - name: Publish the release
         if: steps.ver.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
@@ -94,7 +101,7 @@ jobs:
           if [[ "${{ steps.ver.outputs.create_tag }}" == "true" ]]; then extra+=(--target "$GITHUB_SHA"); fi
           if [[ "$VERSION" == *-* ]]; then extra+=(--prerelease); fi
           gh release create "$TAG" \
-            "dist/Contrappunto-${VERSION}.zip" dist/README.TXT \
-            --title "Contrappunto automatico ${VERSION}" \
+            "dist/Contrappunto-${VERSION}.zip" dist/*.TXT \
+            --title "Contrappunto ${VERSION}" \
             --notes-file dist/release-notes.md \
             "${extra[@]}"

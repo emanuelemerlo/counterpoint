@@ -1,0 +1,11 @@
+{
+    "_comment": "One entry per language of the release. template: release/readme/<code>.txt; file: name inside the zip; changelog: release notes for that language (falls back to CHANGELOG.md if the version is missing). The first entry is the main language of the GitHub release notes.",
+    "languages": [
+        { "code": "en", "name": "English", "template": "en.txt", "file": "README.TXT", "changelog": "CHANGELOG.md",
+          "version_label": "Version", "no_history": "(no earlier versions)", "date_format": "%Y-%m-%d",
+          "install": "**Installation:** download `Contrappunto-{VERSION}.zip`, extract the `contrappunto` folder into `Documents/MuseScore4/Plugins/` and enable the plugin under *Plugins → Manage plugins*. When updating, first delete the old folder (even if it is called `Contrappunto` with a capital C). Full instructions in `README.TXT` and in the [Wiki]({WIKI_URL})." },
+        { "code": "it", "name": "Italiano", "template": "it.txt", "file": "LEGGIMI.TXT", "changelog": "CHANGELOG.it.md",
+          "version_label": "Versione", "no_history": "(nessuna versione precedente)", "date_format": "%d/%m/%Y",
+          "install": "**Installazione:** scarica `Contrappunto-{VERSION}.zip`, estrai la cartella `contrappunto` in `Documenti/MuseScore4/Plugins/` e attiva il plugin da *Plugin → Gestisci plugin*. Se aggiorni, elimina prima la vecchia cartella (anche se si chiama `Contrappunto` con la maiuscola). Istruzioni complete in `LEGGIMI.TXT` e nella [Wiki]({WIKI_URL})." }
+    ]
+}

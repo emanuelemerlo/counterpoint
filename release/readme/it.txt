@@ -1,5 +1,6 @@
 ==============================================================================
- CONTRAPPUNTO AUTOMATICO - plugin per MuseScore 4
+ CONTRAPPUNTO - plugin per MuseScore 4
+ Scrive, confronta e corregge il contrappunto
  Versione {VERSION} - {DATE}
 ==============================================================================
 
@@ -7,6 +8,11 @@ Genera una contro-melodia in contrappunto a partire da una melodia (canto
 dato) e, se presente, da un basso, e la scrive in un nuovo rigo oppure in una
 voce di un rigo esistente. Analizza anche una voce scritta a mano con le
 stesse regole e rigenera una variante mantenendo le note scelte.
+
+English: see README.TXT in the same folder.
+
+Guide passo passo e una breve introduzione al contrappunto per chi non lo
+conosce: {WIKI_URL}
 
 
 ------------------------------------------------------------------------------
@@ -50,6 +56,9 @@ stesse regole e rigenera una variante mantenendo le note scelte.
    lo stesso contrappunto.
  * Confronto di più varianti ordinate per qualità, nella stessa
    destinazione o in righi separati.
+ * Interfaccia in italiano e in inglese: segue la lingua di MuseScore, oppure
+   si sceglie dalla finestra ("Lingua"). Altre lingue si aggiungono con un
+   file in i18n/.
  * La finestra segue il tema chiaro/scuro di MuseScore.
  * Ogni generazione è un'unica operazione annullabile con Ctrl+Z.
 
@@ -70,13 +79,15 @@ stesse regole e rigenera una variante mantenendo le note scelte.
     RIAVVIA MuseScore: finché resta aperto continua a usare la versione
     caricata all'avvio. Il numero di versione in uso compare accanto al
     titolo della finestra del plugin.
- 3. In MuseScore: menu Plugin > Gestisci plugin, attiva
-    "Contrappunto automatico".
+ 3. In MuseScore: menu Plugin > Gestisci plugin, attiva "Contrappunto"
+    (fino alla versione 2.6 si chiamava "Contrappunto automatico").
  4. Il plugin compare nel menu Plugin > Composizione/arrangiamento.
 
-La cartella deve contenere entrambi i file:
+La cartella deve contenere:
    contrappunto.qml        interfaccia e collegamento con lo spartito
    contrappunto_engine.js  motore musicale
+   i18n/                   testi dell'interfaccia, un file per lingua
+   README.TXT, LEGGIMI.TXT queste istruzioni, in inglese e in italiano
 
 
 ------------------------------------------------------------------------------
@@ -132,6 +143,11 @@ Rigenerare il resto
  2. Premi "Rigenera il resto": quelle note restano com'erano e tutte le
     altre vengono ricalcolate intorno a loro, con le stesse impostazioni.
 
+Cambiare lingua
+ * In alto a destra, "Lingua": "Automatica" usa la lingua di MuseScore
+   (inglese se non c'è un file per quella lingua). La scelta viene
+   ricordata. Cambiando lingua anche il messaggio mostrato si traduce.
+
 Consigli
  * Per un canto dato breve prova le specie 1:1, 2:1 e ritardi; per un brano
    intero la specie "Libero" dà il risultato più naturale.
@@ -158,6 +174,7 @@ Consigli
                   stesso risultato
  Quante           Numero di varianti da calcolare e ordinare (1-8)
  Una per rigo     Scrive ogni variante in un rigo nuovo
+ Lingua           Automatica (quella di MuseScore), English, Italiano
 
 
 ------------------------------------------------------------------------------
@@ -187,5 +204,6 @@ Consigli
 {HISTORY}
 
 ------------------------------------------------------------------------------
+ Guide (Wiki): {WIKI_URL}
  Sorgenti e segnalazioni: {REPO_URL}
 ------------------------------------------------------------------------------
